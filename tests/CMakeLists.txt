@@ -106,3 +106,16 @@ target_link_libraries(session_manager_test PRIVATE
 target_include_directories(session_manager_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
 add_test(NAME session_manager COMMAND session_manager_test)
+
+add_executable(system_tray_test system_tray_test.cpp)
+target_link_libraries(system_tray_test PRIVATE 
+    gtest 
+    jules_ui
+    Qt6::Core 
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::Test
+)
+target_include_directories(system_tray_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+add_test(NAME system_tray COMMAND system_tray_test)

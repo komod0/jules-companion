@@ -91,10 +91,12 @@ add_library(jules_ui STATIC
     src/ui/session_list_widget.cpp
     src/ui/new_session_dialog.cpp
     src/ui/session_detail_widget.cpp
+    src/ui/system_tray.cpp
     include/ui/main_window.h
     include/ui/session_list_widget.h
     include/ui/new_session_dialog.h
     include/ui/session_detail_widget.h
+    include/ui/system_tray.h
 )
 
 target_include_directories(jules_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
