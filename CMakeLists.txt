@@ -83,6 +83,18 @@ add_custom_target(download_grammars
 
 add_dependencies(jules_highlighting download_grammars)
 
+add_library(jules_ui STATIC
+    src/ui/main_window.cpp
+    include/ui/main_window.h
+)
+
+target_include_directories(jules_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(jules_ui PUBLIC
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+)
+
 add_executable(jules-linux
     src/main.cpp
     resources/resources.qrc
@@ -92,6 +104,7 @@ target_link_libraries(jules-linux PRIVATE
     jules_api
     jules_data
     jules_highlighting
+    jules_ui
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets

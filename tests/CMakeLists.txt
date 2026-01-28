@@ -63,3 +63,16 @@ set_tests_properties(syntax_highlighter PROPERTIES
     ENVIRONMENT "TREE_SITTER_GRAMMAR_PATH=${CMAKE_SOURCE_DIR}/grammars"
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
+
+add_executable(main_window_test main_window_test.cpp)
+target_link_libraries(main_window_test PRIVATE 
+    gtest 
+    jules_ui
+    Qt6::Core 
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::Test
+)
+target_include_directories(main_window_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+add_test(NAME main_window COMMAND main_window_test)

@@ -1,19 +1,19 @@
 #include <QApplication>
-#include <QMainWindow>
+
+#include "ui/main_window.h"
 
 int main(int argc, char *argv[])
 {
-    // Create the Qt application
     QApplication app(argc, argv);
+    QCoreApplication::setOrganizationName("JulesLinux");
+    QCoreApplication::setApplicationName("Jules");
 
-    // Create a minimal main window
-    QMainWindow window;
-    window.setWindowTitle("Jules - Linux Port");
-    window.resize(800, 600);
-
-    // Show the window
+    jules::MainWindow window;
+    window.restoreWindowState();
     window.show();
 
-    // Run the application event loop
-    return app.exec();
+    int result = app.exec();
+    
+    window.saveWindowState();
+    return result;
 }
