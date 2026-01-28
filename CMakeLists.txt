@@ -27,6 +27,21 @@ target_link_libraries(jules_api PUBLIC
     Qt6::Network
 )
 
+# Jules Data Library
+add_library(jules_data STATIC
+    src/data/database.cpp
+    src/data/session_repository.cpp
+    include/data/database.h
+    include/data/session_repository.h
+)
+
+target_include_directories(jules_data PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(jules_data PUBLIC
+    jules_api
+    Qt6::Core
+    Qt6::Sql
+)
+
 # Add main application executable
 add_executable(jules-linux
     src/main.cpp
@@ -36,6 +51,7 @@ add_executable(jules-linux
 # Link Qt modules to the application
 target_link_libraries(jules-linux PRIVATE
     jules_api
+    jules_data
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets

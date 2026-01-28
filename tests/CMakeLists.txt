@@ -33,3 +33,18 @@ target_include_directories(api_client_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
 # Register API client test with CTest
 add_test(NAME api_client COMMAND api_client_test)
+
+# Session Repository test executable
+add_executable(session_repository_test session_repository_test.cpp)
+target_link_libraries(session_repository_test PRIVATE 
+    gtest 
+    jules_api
+    jules_data
+    Qt6::Core 
+    Qt6::Sql
+    Qt6::Test
+)
+target_include_directories(session_repository_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+# Register Session Repository test with CTest
+add_test(NAME session_repository COMMAND session_repository_test)
