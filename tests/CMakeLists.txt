@@ -90,3 +90,19 @@ target_link_libraries(font_atlas_test PRIVATE
 target_include_directories(font_atlas_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
 add_test(NAME font_atlas COMMAND font_atlas_test)
+
+add_executable(session_manager_test session_manager_test.cpp)
+target_link_libraries(session_manager_test PRIVATE 
+    gtest 
+    jules_api
+    jules_data
+    jules_ui
+    Qt6::Core 
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::Sql
+    Qt6::Test
+)
+target_include_directories(session_manager_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+add_test(NAME session_manager COMMAND session_manager_test)

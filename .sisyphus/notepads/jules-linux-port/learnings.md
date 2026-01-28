@@ -449,3 +449,90 @@ The OpenGL + FreeType approach successfully builds and passes all tests:
 - **Qt6::OpenGLWidgets**: New in Qt6, required for QOpenGLWidget (separate from Qt6::OpenGL)
 - **FreeType paths**: Multiple font paths needed for cross-distro compatibility
 - **Minimum texture size**: 256x256 minimum prevents scale comparison at small font sizes
+
+## 2026-01-28 - Task: Session Management UI with Real-time Polling
+
+### Widget Architecture
+- **SessionListWidget**: QWidget with QListWidget for session display, QTimer for polling
+- **NewSessionDialog**: QDialog with source/branch QComboBox, QTextEdit for prompt
+- **SessionDetailWidget**: QWidget with activity list, state indicator, PR links
+- **Pattern**: All widgets follow RAII, use Qt parent-child ownership
+
+### Session List Implementation
+- **Real-time updates**: QTimer-based polling with configurable interval (default 10s)
+- **Repository signals**: Connects to sessionChanged/sessionDeleted/sessionsReloaded for reactive updates
+- **Index tracking**: QMap<QString, int> for O(1) session ID to list index lookup
+- **State visualization**: QIcon per SessionState + state-specific colors (Google-like palette)
+- **Keyboard navigation**: navigateUp()/navigateDown() methods for arrow key support
+
+### New Session Dialog
+- **Source/Branch cascade**: Branch combo updates when source changes
+- **Validation**: isValid() checks source, branch, and prompt before accept()
+- **Preferences persistence**: QSettings stores last used source/branch per repo
+- **Signal-based result**: sessionRequested(Source, QString branch, QString prompt) on accept
+
+### Session Detail Widget
+- **Activity display**: QListWidget showing user messages, agent messages, progress, plan steps
+- **State indicator**: Pill-shaped QLabel with state-specific background color
+- **PR integration**: pullRequestBtn visible when session has PR output
+- **URL handling**: openUrlRequested(QString) signal for external link handling
+
+### Polling Strategy (from Mac SessionPollingController.swift)
+- **Base interval**: 10 seconds for active session polling
+- **Active sessions**: Only sessions with isActive() == true are polled
+- **Polling control**: startPolling()/stopPolling()/isPolling() methods
+- **Configurable for tests**: setPollingIntervalMs() allows fast testing
+
+### Session State Display Mapping
+```cpp
+const QMap<SessionState, QString> STATE_TEXTS = {
+    {SessionState::Queued, "Queued"},
+    {SessionState::Planning, "Planning"},
+    {SessionState::InProgress, "In Progress"},
+    {SessionState::Completed, "Completed"},
+    {SessionState::Failed, "Failed"},
+    {SessionState::AwaitingUserFeedback, "Awaiting Feedback"},
+    {SessionState::AwaitingPlanApproval, "Awaiting Approval"}
+};
+```
+
+### Color Palette (matching Mac app)
+- **Queued/Unknown**: Gray (#808080)
+- **Planning/InProgress**: Google Blue (#4285f4)
+- **Completed**: Google Green (#34a853)
+- **Failed**: Google Red (#ea4335)
+- **Paused**: Yellow (#fbbc04)
+- **Awaiting**: Orange (#ff9800)
+
+### Test Strategy
+- **TDD approach**: 38 tests written first covering all widget behavior
+- **Signal testing**: QSignalSpy for verifying signal emissions
+- **Repository integration**: Tests use real SessionRepository with temp database
+- **Ordering tests**: Must set explicit createTime values to ensure deterministic order
+
+### CMake Integration
+- **jules_ui library expanded**: Added 3 new .cpp and 3 new .h files
+- **Dependencies**: jules_ui now links jules_api + jules_data for data types
+- **Test target**: session_manager_test links jules_ui + gtest + Qt6::Test
+
+### Key Gotchas
+- **QPushButton include**: QDialogButtonBox forward declares QPushButton, need explicit include
+- **QVariantMap vs QMap**: Use QVariantMap for QSettings, not template-based value<>()
+- **Session ordering**: Sessions ordered by createTime DESC - tests must set explicit times
+- **processEvents timing**: Use longer timeouts (100ms+) for signal propagation in tests
+
+### Files Created
+```
+include/ui/session_list_widget.h     # List with polling support
+include/ui/new_session_dialog.h      # Dialog for creating sessions
+include/ui/session_detail_widget.h   # Detail view with activities
+src/ui/session_list_widget.cpp       # Implementation (~290 lines)
+src/ui/new_session_dialog.cpp        # Implementation (~230 lines)
+src/ui/session_detail_widget.cpp     # Implementation (~320 lines)
+tests/session_manager_test.cpp       # 38 unit tests
+```
+
+### Test Results
+- 38 tests, all passing
+- Coverage: widget creation, data display, signals, polling, keyboard navigation, integration
+- Total test time: 1.64 seconds

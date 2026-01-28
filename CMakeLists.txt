@@ -88,11 +88,19 @@ add_dependencies(jules_highlighting download_grammars)
 
 add_library(jules_ui STATIC
     src/ui/main_window.cpp
+    src/ui/session_list_widget.cpp
+    src/ui/new_session_dialog.cpp
+    src/ui/session_detail_widget.cpp
     include/ui/main_window.h
+    include/ui/session_list_widget.h
+    include/ui/new_session_dialog.h
+    include/ui/session_detail_widget.h
 )
 
 target_include_directories(jules_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(jules_ui PUBLIC
+    jules_api
+    jules_data
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
