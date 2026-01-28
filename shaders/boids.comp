@@ -1,0 +1,156 @@
+#version 430 core
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+struct BoidParticle {
+    vec2 position;
+    vec2 velocity;
+};
+
+layout(std430, binding = 0) buffer ParticleBuffer {
+    BoidParticle particles[];
+};
+
+layout(std140, binding = 1) uniform BoidsUniforms {
+    vec2 resolution;
+    float time;
+    float deltaTime;
+    vec4 fishColor;
+    vec4 backgroundColor;
+    int numFish;
+    int padding1;
+    int padding2;
+    int padding3;
+};
+
+float boids_hash(float n) {
+    return fract(sin(n) * 43758.5453123);
+}
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= uint(numFish)) return;
+
+    BoidParticle p = particles[id];
+    vec2 pos = p.position;
+    vec2 vel = p.velocity;
+
+    vec2 separation = vec2(0.0);
+    vec2 alignment = vec2(0.0);
+    vec2 cohesion = vec2(0.0);
+    vec2 center = vec2(0.0);
+    int count = 0;
+
+    const float r_sep = 0.1;
+    const float r_align = 0.3;
+
+    for (int i = 0; i < numFish; i++) {
+        if (i == int(id)) continue;
+
+        BoidParticle other = particles[i];
+        float d = distance(pos, other.position);
+
+        if (d < r_sep) {
+            separation += (pos - other.position) / (d + 0.0001);
+        }
+        if (d < r_align) {
+            alignment += other.velocity;
+            center += other.position;
+            count++;
+        }
+    }
+
+    if (count > 0) {
+        alignment /= float(count);
+        center /= float(count);
+        cohesion = center - pos;
+    }
+
+    if (length(alignment) > 0.0) alignment = normalize(alignment);
+    if (length(cohesion) > 0.0) cohesion = normalize(cohesion);
+    if (length(separation) > 0.0) separation = normalize(separation);
+
+    float w_sep = 1.5;
+    float w_align = 1.0;
+    float w_coh = 0.8;
+
+    float randId = boids_hash(float(id) * 0.123);
+    bool isSolo = randId > 0.85;
+
+    if (isSolo) {
+        w_sep = 2.0;
+        w_align = 0.2;
+        w_coh = 0.0;
+    }
+
+    vec2 accel = separation * w_sep + alignment * w_align + cohesion * w_coh;
+
+    const float noiseScale = 4.0;
+    float nX = sin(pos.y * noiseScale + time + float(id)) * cos(pos.x * noiseScale + time * 0.5);
+    float nY = cos(pos.x * noiseScale + time + float(id)) * sin(pos.y * noiseScale + time * 0.5);
+
+    float noiseForce = 0.2;
+
+    if (isSolo) {
+        float dartTimer = floor(time * 4.0 + randId * 10.0);
+        float dartRand = boids_hash(dartTimer);
+
+        if (dartRand > 0.7) {
+            noiseForce = 4.0;
+            nX = sin(dartTimer * 12.3);
+            nY = cos(dartTimer * 45.6);
+        } else {
+            noiseForce = 0.5;
+        }
+    }
+
+    accel += vec2(nX, nY) * noiseForce;
+
+    float aspect = resolution.x / resolution.y;
+    float margin = 0.1;
+    float xLimit = aspect + margin;
+    float yLimit = 1.0 + margin;
+
+    bool needsReset = pos.y > yLimit || pos.x < -xLimit || pos.x > xLimit;
+
+    if (needsReset) {
+        float spawnChoice = boids_hash(float(id) + time * 0.1);
+
+        if (spawnChoice < 0.7) {
+            pos.y = -yLimit - 0.5;
+            pos.x = boids_hash(float(id) + time) * (aspect * 1.6) - (aspect * 0.8);
+            vel.x = (boids_hash(float(id) * 2.0 + time) - 0.5) * 0.004;
+            vel.y = abs(vel.y) * 0.5 + 0.002;
+        } else {
+            bool fromLeft = boids_hash(float(id) * 3.0 + time) > 0.5;
+            pos.x = fromLeft ? -xLimit - 0.3 : xLimit + 0.3;
+            pos.y = boids_hash(float(id) + time * 0.5) * 1.6 - 0.8;
+            vel.x = fromLeft ? 0.003 : -0.003;
+            vel.y = 0.002;
+        }
+    }
+
+    if (pos.y < -yLimit) {
+        pos.y = -yLimit;
+        vel.y = abs(vel.y) * 0.5;
+    }
+
+    const float dt = 0.016;
+    vel += accel * dt;
+
+    float speed = length(vel);
+    float maxSpeed = isSolo ? 0.010 : 0.005;
+    const float minSpeed = 0.005;
+
+    if (speed > maxSpeed) {
+        vel = normalize(vel) * maxSpeed;
+    } else if (speed < minSpeed && speed > 0.0001) {
+        vel = normalize(vel) * minSpeed;
+    }
+
+    pos += vel;
+    pos.y += 0.012;
+
+    particles[id].position = pos;
+    particles[id].velocity = vel;
+}

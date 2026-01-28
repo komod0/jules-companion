@@ -5,5 +5,8 @@
         <file alias="text.frag">../shaders/text.frag</file>
         <file alias="rect.vert">../shaders/rect.vert</file>
         <file alias="rect.frag">../shaders/rect.frag</file>
+        <file alias="boids.comp">../shaders/boids.comp</file>
+        <file alias="boids.vert">../shaders/boids.vert</file>
+        <file alias="boids.frag">../shaders/boids.frag</file>
     </qresource>
 </RCC>

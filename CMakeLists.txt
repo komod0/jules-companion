@@ -140,9 +140,11 @@ add_library(jules_rendering STATIC
     src/rendering/font_atlas.cpp
     src/rendering/opengl_widget.cpp
     src/rendering/diff_renderer.cpp
+    src/rendering/boids_widget.cpp
     include/rendering/font_atlas.h
     include/rendering/opengl_widget.h
     include/rendering/diff_renderer.h
+    include/rendering/boids_widget.h
 )
 
 target_include_directories(jules_rendering PUBLIC 
