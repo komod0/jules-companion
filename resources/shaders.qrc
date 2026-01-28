@@ -1,0 +1,9 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/shaders">
+        <file alias="text.vert">../shaders/text.vert</file>
+        <file alias="text.frag">../shaders/text.frag</file>
+        <file alias="rect.vert">../shaders/rect.vert</file>
+        <file alias="rect.frag">../shaders/rect.frag</file>
+    </qresource>
+</RCC>

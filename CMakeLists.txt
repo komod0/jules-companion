@@ -28,7 +28,10 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 COMPONENTS Core Gui Widgets Network Sql OpenGL Test REQUIRED)
+find_package(Qt6 COMPONENTS Core Gui Widgets Network Sql OpenGL OpenGLWidgets Test REQUIRED)
+
+# Find FreeType for font rendering
+find_package(Freetype REQUIRED)
 
 # Enable testing
 enable_testing()
@@ -95,6 +98,27 @@ target_link_libraries(jules_ui PUBLIC
     Qt6::Widgets
 )
 
+# Jules Rendering Library (OpenGL + FreeType)
+add_library(jules_rendering STATIC
+    src/rendering/font_atlas.cpp
+    src/rendering/opengl_widget.cpp
+    include/rendering/font_atlas.h
+    include/rendering/opengl_widget.h
+)
+
+target_include_directories(jules_rendering PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${FREETYPE_INCLUDE_DIRS}
+)
+target_link_libraries(jules_rendering PUBLIC
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::OpenGL
+    Qt6::OpenGLWidgets
+    ${FREETYPE_LIBRARIES}
+)
+
 add_executable(jules-linux
     src/main.cpp
     resources/resources.qrc
@@ -115,6 +139,29 @@ target_link_libraries(jules-linux PRIVATE
 
 # Add include directory
 target_include_directories(jules-linux PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+# OpenGL Text Rendering Spike executable
+add_executable(opengl_spike
+    src/opengl_spike_main.cpp
+    resources/shaders.qrc
+)
+
+target_include_directories(opengl_spike PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(opengl_spike PRIVATE
+    jules_rendering
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::OpenGL
+    Qt6::OpenGLWidgets
+)
+
+# Copy shaders to build directory for runtime loading
+add_custom_command(TARGET opengl_spike POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/shaders
+    $<TARGET_FILE_DIR:opengl_spike>/shaders
+)
 
 # Add tests subdirectory
 add_subdirectory(tests)

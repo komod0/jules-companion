@@ -76,3 +76,17 @@ target_link_libraries(main_window_test PRIVATE
 target_include_directories(main_window_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
 add_test(NAME main_window COMMAND main_window_test)
+
+# Font Atlas test executable
+add_executable(font_atlas_test font_atlas_test.cpp)
+target_link_libraries(font_atlas_test PRIVATE 
+    gtest 
+    jules_rendering
+    Qt6::Core 
+    Qt6::Gui
+    Qt6::OpenGL
+    Qt6::OpenGLWidgets
+)
+target_include_directories(font_atlas_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+add_test(NAME font_atlas COMMAND font_atlas_test)

@@ -347,3 +347,105 @@ tests/main_window_test.cpp   # 27 unit tests
 - **Splitter resize tests**: Allow tolerance due to constraints
 - **Theme palette roles**: Must set both enabled and disabled states
 - **QApplication::setPalette()**: Required for consistent theming across all widgets
+
+## 2026-01-28 - Task: OpenGL Text Rendering Spike
+
+### Architecture Overview
+Successfully validated OpenGL 3.3 Core + FreeType approach for GPU-accelerated text rendering on Linux. This is the cross-platform equivalent of Mac's Metal-based FluxRenderer.
+
+### Font Atlas (FreeType + OpenGL)
+- **FontAtlas class**: PIMPL pattern for implementation hiding, similar to Mac's FontAtlasManager
+- **FreeType initialization**: FT_Init_FreeType() + FT_New_Face() + FT_Set_Pixel_Sizes()
+- **Font discovery**: Tries common monospace font paths (/usr/share/fonts/{TTF,truetype}/DejaVuSansMono.ttf, etc.)
+- **Grid-based layout**: ceil(sqrt(95)) = 10x10 grid for ASCII printable range (32-126)
+- **R8 texture format**: Single-channel grayscale for GPU memory efficiency
+- **UV coordinate calculation**: Normalized 0-1 range for shader sampling
+
+### GlyphDescriptor Structure
+```cpp
+struct GlyphDescriptor {
+    unsigned int glyphIndex;  // FreeType glyph index
+    Vec2 uvMin, uvMax;        // Texture coordinates (normalized 0-1)
+    Vec2 size;                // Size in logical points
+    Vec2 bearing;             // Baseline offset
+    float advance;            // Horizontal advance in points
+};
+```
+
+### Shader Architecture (GLSL 3.30 Core)
+- **text.vert**: Instanced quad vertex shader
+  - Unit quad (6 vertices) scaled by instance data
+  - NDC conversion with Y-flip for OpenGL coordinate system
+  - UV interpolation between uvMin/uvMax
+- **text.frag**: Font atlas sampling
+  - R8 texture sampling for alpha coverage
+  - Color tinting via instance color
+  - Alpha blending for text anti-aliasing
+- **rect.vert/rect.frag**: Background rectangle shaders with SDF-based rounded corners
+
+### Instance Data Layout (Per-Glyph)
+```cpp
+struct InstanceData {
+    float originX, originY;   // Screen position in points
+    float sizeX, sizeY;       // Glyph size
+    float uvMinX, uvMinY;     // Atlas UV coordinates
+    float uvMaxX, uvMaxY;
+    float colorR, colorG, colorB, colorA;  // RGBA color
+};
+```
+
+### Rendering Pipeline (QOpenGLWidget)
+1. **initializeGL()**: Initialize OpenGL functions, compile shaders, create VAO/VBOs
+2. **resizeGL()**: Update viewport and scale factor for HiDPI
+3. **paintGL()**: Single draw call via glDrawArraysInstanced()
+
+### Key Technical Decisions
+- **OpenGL 3.3 Core**: Minimum version for instanced rendering + VAO support
+- **QOpenGLWidget**: Qt's modern OpenGL integration (replaces QGLWidget)
+- **QOpenGLFunctions_3_3_Core**: Type-safe access to OpenGL 3.3 functions
+- **storageModeShared equivalent**: Using GL_DYNAMIC_DRAW for frequent buffer updates
+
+### Test Results
+- **12 tests, 12 passing** (font_atlas_test.cpp)
+- Tests cover: atlas creation, ASCII glyph population, texture generation, UV validity, metrics, fast-path lookup, scale/size effects
+
+### Files Created
+```
+include/rendering/font_atlas.h      # Font atlas header
+include/rendering/opengl_widget.h   # OpenGL widget header
+src/rendering/font_atlas.cpp        # FreeType-based font atlas (~350 lines)
+src/rendering/opengl_widget.cpp     # QOpenGLWidget with instanced rendering (~380 lines)
+src/opengl_spike_main.cpp           # Demo application with FPS counter
+shaders/text.vert                   # Text vertex shader
+shaders/text.frag                   # Text fragment shader
+shaders/rect.vert                   # Rectangle vertex shader
+shaders/rect.frag                   # Rectangle fragment shader
+tests/font_atlas_test.cpp           # 12 unit tests
+resources/shaders.qrc               # Qt resource file for shaders
+```
+
+### CMake Integration
+- **jules_rendering library**: Static library linking Qt6::OpenGL, Qt6::OpenGLWidgets, Freetype
+- **opengl_spike executable**: Demo app with shader resources bundled
+- **find_package(Freetype REQUIRED)**: System FreeType dependency
+
+### Performance Notes
+- **Single draw call**: All glyphs rendered in one glDrawArraysInstanced() call
+- **10K characters target**: Architecture supports this via instanced rendering
+- **VSync enabled**: QSurfaceFormat::setSwapInterval(1) for tearing-free display
+- **FPS tracking**: Built into demo app for performance verification
+
+### Decision Point: OpenGL Approach VALIDATED
+The OpenGL + FreeType approach successfully builds and passes all tests:
+- Font atlas generates correctly with proper UV coordinates
+- Instanced rendering pipeline compiles and links
+- Works with both Qt6::OpenGL and Qt6::OpenGLWidgets
+- Cross-platform compatible (no platform-specific code)
+
+**Recommendation**: Proceed with OpenGL implementation for Jules Linux port.
+
+### Key Gotchas Encountered
+- **QDateTime include**: Must explicitly include <QDateTime> for currentMSecsSinceEpoch()
+- **Qt6::OpenGLWidgets**: New in Qt6, required for QOpenGLWidget (separate from Qt6::OpenGL)
+- **FreeType paths**: Multiple font paths needed for cross-distro compatibility
+- **Minimum texture size**: 256x256 minimum prevents scale comparison at small font sizes
