@@ -48,3 +48,18 @@ target_include_directories(session_repository_test PRIVATE ${CMAKE_SOURCE_DIR}/i
 
 # Register Session Repository test with CTest
 add_test(NAME session_repository COMMAND session_repository_test)
+
+add_executable(syntax_highlighter_test syntax_highlighter_test.cpp)
+target_link_libraries(syntax_highlighter_test PRIVATE 
+    gtest 
+    gtest_main
+    jules_highlighting
+)
+target_include_directories(syntax_highlighter_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+add_test(NAME syntax_highlighter COMMAND syntax_highlighter_test)
+
+set_tests_properties(syntax_highlighter PROPERTIES
+    ENVIRONMENT "TREE_SITTER_GRAMMAR_PATH=${CMAKE_SOURCE_DIR}/grammars"
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)

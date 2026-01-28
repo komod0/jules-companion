@@ -1,9 +1,27 @@
 cmake_minimum_required(VERSION 3.24)
-project(Jules LANGUAGES CXX)
+project(Jules LANGUAGES C CXX)
 
-# Set C++ standard
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
+include(FetchContent)
+
+FetchContent_Declare(
+    tree-sitter
+    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter.git
+    GIT_TAG        master
+)
+FetchContent_MakeAvailable(tree-sitter)
+
+add_library(tree-sitter-lib STATIC
+    ${tree-sitter_SOURCE_DIR}/lib/src/lib.c
+)
+target_include_directories(tree-sitter-lib PUBLIC
+    ${tree-sitter_SOURCE_DIR}/lib/include
+    ${tree-sitter_SOURCE_DIR}/lib/src
+)
 
 # Qt 6 configuration
 set(CMAKE_AUTOMOC ON)
@@ -42,16 +60,38 @@ target_link_libraries(jules_data PUBLIC
     Qt6::Sql
 )
 
-# Add main application executable
+add_library(jules_highlighting STATIC
+    src/highlighting/syntax_highlighter.cpp
+    include/highlighting/syntax_highlighter.h
+)
+
+target_include_directories(jules_highlighting PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${tree-sitter_SOURCE_DIR}/lib/include
+)
+target_link_libraries(jules_highlighting PUBLIC
+    tree-sitter-lib
+    ${CMAKE_DL_LIBS}
+)
+
+set(GRAMMARS_DIR ${CMAKE_SOURCE_DIR}/grammars)
+
+add_custom_target(download_grammars
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${GRAMMARS_DIR}
+    COMMENT "Creating grammars directory"
+)
+
+add_dependencies(jules_highlighting download_grammars)
+
 add_executable(jules-linux
     src/main.cpp
     resources/resources.qrc
 )
 
-# Link Qt modules to the application
 target_link_libraries(jules-linux PRIVATE
     jules_api
     jules_data
+    jules_highlighting
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
