@@ -19,3 +19,17 @@ target_link_libraries(smoke_test PRIVATE gtest gtest_main Qt6::Core Qt6::Gui Qt6
 
 # Register smoke test with CTest
 add_test(NAME smoke COMMAND smoke_test)
+
+# API Client test executable
+add_executable(api_client_test api_client_test.cpp)
+target_link_libraries(api_client_test PRIVATE 
+    gtest 
+    jules_api
+    Qt6::Core 
+    Qt6::Network
+    Qt6::Test
+)
+target_include_directories(api_client_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+# Register API client test with CTest
+add_test(NAME api_client COMMAND api_client_test)

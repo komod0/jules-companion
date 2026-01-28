@@ -15,6 +15,18 @@ find_package(Qt6 COMPONENTS Core Gui Widgets Network Sql OpenGL Test REQUIRED)
 # Enable testing
 enable_testing()
 
+# Jules API Library
+add_library(jules_api STATIC
+    src/api/jules_api_client.cpp
+    include/api/jules_api_client.h
+)
+
+target_include_directories(jules_api PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(jules_api PUBLIC
+    Qt6::Core
+    Qt6::Network
+)
+
 # Add main application executable
 add_executable(jules-linux
     src/main.cpp
@@ -23,6 +35,7 @@ add_executable(jules-linux
 
 # Link Qt modules to the application
 target_link_libraries(jules-linux PRIVATE
+    jules_api
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
