@@ -28,10 +28,17 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 COMPONENTS Core Gui Widgets Network Sql OpenGL OpenGLWidgets Test REQUIRED)
+find_package(Qt6 COMPONENTS Core Gui Widgets Network Sql OpenGL OpenGLWidgets DBus Test REQUIRED)
 
 # Find FreeType for font rendering
 find_package(Freetype REQUIRED)
+
+# Find X11/XCB for global hotkeys (optional - only on X11 systems)
+find_package(X11 QUIET)
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(XCB QUIET xcb xcb-keysyms)
+endif()
 
 # Enable testing
 enable_testing()
@@ -108,6 +115,26 @@ target_link_libraries(jules_ui PUBLIC
     Qt6::Widgets
 )
 
+# Jules Input Library (Global Hotkeys - X11/Wayland)
+add_library(jules_input STATIC
+    src/input/global_hotkey.cpp
+    include/input/global_hotkey.h
+)
+
+target_include_directories(jules_input PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(jules_input PUBLIC
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::DBus
+)
+
+if(XCB_FOUND)
+    target_compile_definitions(jules_input PRIVATE JULES_HAS_XCB=1)
+    target_include_directories(jules_input PRIVATE ${XCB_INCLUDE_DIRS})
+    target_link_libraries(jules_input PRIVATE ${XCB_LIBRARIES})
+endif()
+
 # Jules Rendering Library (OpenGL + FreeType)
 add_library(jules_rendering STATIC
     src/rendering/font_atlas.cpp
@@ -139,12 +166,14 @@ target_link_libraries(jules-linux PRIVATE
     jules_data
     jules_highlighting
     jules_ui
+    jules_input
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
     Qt6::Network
     Qt6::Sql
     Qt6::OpenGL
+    Qt6::DBus
 )
 
 # Add include directory

@@ -536,3 +536,90 @@ tests/session_manager_test.cpp       # 38 unit tests
 - 38 tests, all passing
 - Coverage: widget creation, data display, signals, polling, keyboard navigation, integration
 - Total test time: 1.64 seconds
+
+## System Tray Integration (2026-01-28)
+
+### Qt System Tray Architecture
+- `QSystemTrayIcon` provides cross-platform tray icon support
+- On Linux, Qt automatically handles X11 (AppIndicator) vs Wayland (StatusNotifierItem)
+- `isSystemTrayAvailable()` returns false on GNOME without AppIndicator extension
+- Context menus work via `setContextMenu()` on the tray icon
+
+### Mac AppDelegate.swift Reference Patterns
+From Mac menu bar integration:
+- States: idle, queued/planning (animated), inProgress (animated), completed, error
+- Left-click: toggle main panel visibility
+- Right-click: show context menu with Quit, Settings, etc.
+- Track window visibility to update "Show/Hide" action text
+
+### Implementation Details
+- Created programmatic state icons using QPainter (colored circles)
+- States: Idle (gray), Active (green), NeedsAttention (yellow), Error (red)
+- Context menu: Show Window, Settings, Quit (with separators)
+- Signals: stateChanged, activated, showWindowRequested, settingsRequested, quitRequested
+- QPointer used for target window to auto-null on destruction
+
+### TDD Patterns for Qt Widgets
+- QSignalSpy for testing signal emissions
+- GTEST_SKIP when system tray unavailable (CI/headless)
+- QEventLoop + QTimer for processing events in tests
+- Test both signal-based and method-based behavior
+
+### CMake Integration Pattern
+- Add .cpp and .h to jules_ui library
+- Test links against jules_ui + Qt6::Test + gtest
+- Use target_include_directories for include paths
+
+## Global Hotkeys Implementation (2026-01-28)
+
+### X11/Wayland Backend Architecture
+- **Dual-backend design**: X11HotkeyBackend (XGrabKey) + PortalHotkeyBackend (xdg-desktop-portal)
+- **Display server detection**: Uses XDG_SESSION_TYPE env var + WAYLAND_DISPLAY/DISPLAY fallback
+- **Backend selection**: Automatic based on detected display server
+
+### X11 Implementation (XCB)
+- **XCB over Xlib**: More modern, thread-safe, lower-level control
+- **XGrabKey with NumLock/CapsLock**: Must grab all modifier combinations (4 variants)
+- **Native event filter**: QAbstractNativeEventFilter for intercepting XCB events
+- **Key to keycode conversion**: xcb_key_symbols_get_keycode() with X11 keysyms
+
+### Wayland Implementation (xdg-desktop-portal)
+- **org.freedesktop.portal.GlobalShortcuts**: D-Bus interface for sandboxed shortcut registration
+- **Session-based**: CreateSession → BindShortcuts workflow
+- **User interaction required**: Portal may prompt user for confirmation
+- **Signal-based activation**: Activated signal with shortcut ID
+
+### Key Gotchas Encountered
+- **X11 `None` macro conflict**: X11/X.h defines `None` macro, conflicts with `HotkeyBackend::None` enum
+  - Solution: Renamed to `HotkeyBackend::Unavailable`
+- **Qt private headers**: qpa/qplatformnativeinterface.h not available in Qt6 public API
+  - Solution: Open XCB connection directly via xcb_connect()
+- **KeySym type**: Must include X11/X.h for KeySym typedef (not just X11/keysym.h)
+- **Test isolation**: QSettings persist between tests, clear hotkey settings before default tests
+
+### Build Configuration
+- **pkg_check_modules(XCB)**: Finds xcb and xcb-keysyms via pkg-config
+- **JULES_HAS_XCB define**: Compile-time flag for conditional X11 code
+- **Qt6::DBus**: Required for Portal backend D-Bus communication
+
+### Test Patterns
+- **Display server conditional**: Skip X11 tests on Wayland and vice versa
+- **Portal availability**: Accept failure if portal service unavailable
+- **Settings cleanup**: Clear QSettings before testing defaults
+
+### Files Created
+```
+include/input/global_hotkey.h     # Header with enums, HotkeyBinding, GlobalHotkeyManager
+src/input/global_hotkey.cpp       # Implementation (~650 lines, both backends)
+tests/global_hotkeys_test.cpp     # 29 unit tests (28 pass, 1 skip)
+```
+
+### CMake Updates
+- **jules_input library**: New static library linking Qt6::Core, Qt6::Gui, Qt6::Widgets, Qt6::DBus
+- **XCB conditional linking**: ${XCB_LIBRARIES} when XCB_FOUND
+- **jules-linux links**: Added jules_input + Qt6::DBus
+
+### Test Results
+- 29 tests: 28 passed, 1 skipped (X11-specific on Wayland)
+- Coverage: display server detection, backend selection, hotkey registration, conflict handling, settings persistence
+- Total test time: 0.59 seconds

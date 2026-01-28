@@ -119,3 +119,17 @@ target_link_libraries(system_tray_test PRIVATE
 target_include_directories(system_tray_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
 add_test(NAME system_tray COMMAND system_tray_test)
+
+add_executable(global_hotkeys_test global_hotkeys_test.cpp)
+target_link_libraries(global_hotkeys_test PRIVATE 
+    gtest 
+    jules_input
+    Qt6::Core 
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::DBus
+    Qt6::Test
+)
+target_include_directories(global_hotkeys_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+add_test(NAME global_hotkeys COMMAND global_hotkeys_test)
