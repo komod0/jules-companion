@@ -139,8 +139,10 @@ endif()
 add_library(jules_rendering STATIC
     src/rendering/font_atlas.cpp
     src/rendering/opengl_widget.cpp
+    src/rendering/diff_renderer.cpp
     include/rendering/font_atlas.h
     include/rendering/opengl_widget.h
+    include/rendering/diff_renderer.h
 )
 
 target_include_directories(jules_rendering PUBLIC 
@@ -148,6 +150,7 @@ target_include_directories(jules_rendering PUBLIC
     ${FREETYPE_INCLUDE_DIRS}
 )
 target_link_libraries(jules_rendering PUBLIC
+    jules_highlighting
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets

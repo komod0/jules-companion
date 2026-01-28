@@ -133,3 +133,24 @@ target_link_libraries(global_hotkeys_test PRIVATE
 target_include_directories(global_hotkeys_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
 add_test(NAME global_hotkeys COMMAND global_hotkeys_test)
+
+# Diff Renderer test executable
+add_executable(diff_renderer_test diff_renderer_test.cpp)
+target_link_libraries(diff_renderer_test PRIVATE 
+    gtest 
+    gtest_main
+    jules_rendering
+    jules_highlighting
+    Qt6::Core 
+    Qt6::Gui
+    Qt6::OpenGL
+    Qt6::OpenGLWidgets
+)
+target_include_directories(diff_renderer_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+add_test(NAME diff_renderer COMMAND diff_renderer_test)
+
+set_tests_properties(diff_renderer PROPERTIES
+    ENVIRONMENT "TREE_SITTER_GRAMMAR_PATH=${CMAKE_SOURCE_DIR}/grammars"
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
