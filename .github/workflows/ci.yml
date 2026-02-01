@@ -44,7 +44,9 @@ jobs:
             qt6-qtbase-devel \
             qt6-qttools-devel \
             mesa-libGL-devel \
-            git-core
+            git-core \
+            freetype-devel \
+            xorg-x11-server-Xvfb
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
@@ -52,7 +54,7 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          ctest --output-on-failure
+          xvfb-run ctest --output-on-failure
 
   test-arch:
     runs-on: ubuntu-latest
@@ -68,7 +70,9 @@ jobs:
             qt6-base \
             qt6-tools \
             mesa \
-            git
+            git \
+            xvfb \
+            python
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
@@ -76,4 +80,4 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          ctest --output-on-failure
+          xvfb-run ctest --output-on-failure
