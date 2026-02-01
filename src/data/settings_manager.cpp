@@ -13,6 +13,10 @@ QString obfuscate(const QString& plaintext, const QString& key) {
     QByteArray data = plaintext.toUtf8();
     QByteArray keyBytes = key.toUtf8();
 
+    if (keyBytes.isEmpty()) {
+        return QString::fromLatin1(data.toBase64());
+    }
+
     for (int i = 0; i < data.size(); ++i) {
         data[i] = data[i] ^ keyBytes[i % keyBytes.size()];
     }
