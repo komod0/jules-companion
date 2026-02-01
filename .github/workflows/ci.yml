@@ -15,11 +15,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            git \
             cmake \
             build-essential \
             qt6-base-dev \
             qt6-tools-dev \
+            libqt6opengl6-dev \
+            libqt6sql6-sqlite \
             libgl1-mesa-dev \
+            libfreetype-dev \
+            libxcb-keysyms1-dev \
             xvfb
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -28,7 +33,7 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          xvfb-run ctest --output-on-failure
+          xvfb-run --auto-servernum ctest --output-on-failure
 
   test-fedora:
     runs-on: ubuntu-latest
@@ -38,14 +43,16 @@ jobs:
       - name: Install dependencies
         run: |
           dnf install -y \
+            git \
             cmake \
             gcc-c++ \
             make \
             qt6-qtbase-devel \
             qt6-qttools-devel \
             mesa-libGL-devel \
-            git-core \
             freetype-devel \
+            libxcb-devel \
+            xcb-util-keysyms-devel \
             xorg-x11-server-Xvfb
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -54,7 +61,7 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          xvfb-run ctest --output-on-failure
+          xvfb-run --auto-servernum ctest --output-on-failure
 
   test-arch:
     runs-on: ubuntu-latest
@@ -65,13 +72,16 @@ jobs:
         run: |
           pacman -Syu --noconfirm
           pacman -S --noconfirm \
+            git \
             cmake \
             base-devel \
             qt6-base \
             qt6-tools \
             mesa \
-            git \
-            xvfb \
+            freetype \
+            libxcb \
+            xcb-util-keysyms \
+            xorg-server-xvfb \
             python
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -80,4 +90,4 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          xvfb-run ctest --output-on-failure
+          xvfb-run --auto-servernum ctest --output-on-failure
