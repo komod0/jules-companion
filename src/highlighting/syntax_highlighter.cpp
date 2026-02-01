@@ -1,15 +1,50 @@
 #include "highlighting/syntax_highlighter.h"
-#include <tree_sitter/api.h>
-#include <unordered_map>
+#include <QCoreApplication>
+#include <QDebug>
+#include <QDir>
 #include <algorithm>
-#include <mutex>
-#include <thread>
 #include <dlfcn.h>
 #include <filesystem>
+#include <mutex>
+#include <thread>
+#include <tree_sitter/api.h>
+#include <unordered_map>
 
 namespace jules::highlighting {
 
 namespace {
+
+    QString findGrammarPath() {
+      // 1. Check environment variable (AppImage sets this in AppRun)
+      QString envPath = qEnvironmentVariable("TREE_SITTER_GRAMMAR_PATH");
+      if (!envPath.isEmpty() && QDir(envPath).exists()) {
+        qDebug() << "Using grammar path from env:" << envPath;
+        return envPath;
+      }
+
+      // 2. Check relative to executable (installed layout)
+      QString exeDir = QCoreApplication::applicationDirPath();
+
+      // AppImage: /tmp/.mount_xxx/usr/bin ->
+      // /tmp/.mount_xxx/usr/lib/jules-linux/grammars
+      QString appImagePath = exeDir + "/../lib/jules-linux/grammars";
+      if (QDir(appImagePath).exists()) {
+        qDebug() << "Using grammar path (AppImage):"
+                 << QDir(appImagePath).canonicalPath();
+        return QDir(appImagePath).canonicalPath();
+      }
+
+      // 3. Check build directory (development)
+      QString buildPath = QDir::currentPath() + "/grammars";
+      if (QDir(buildPath).exists()) {
+        qDebug() << "Using grammar path (build):" << buildPath;
+        return buildPath;
+      }
+
+      // 4. Fallback to relative path
+      qWarning() << "Grammar path not found, using fallback";
+      return QStringLiteral("./grammars");
+    }
     
 struct LanguageInfo {
     std::string name;
@@ -567,6 +602,7 @@ std::string mapCaptureToType(const std::string& captureName) {
 class SyntaxHighlighter::Impl {
 public:
     Impl() : m_initialized(false) {
+        initialize();
         loadLanguages();
     }
     
@@ -718,6 +754,7 @@ public:
     }
     
 private:
+    void initialize() { m_grammarPath = findGrammarPath(); }
     void loadLanguages() {
         m_parser = ts_parser_new();
         if (!m_parser) {
@@ -747,35 +784,21 @@ private:
             {"yaml", "libtree-sitter-yaml.so", "tree_sitter_yaml"},
         };
         
-        std::vector<std::string> searchPaths = {
-            "./grammars/",
-            "../grammars/",
-            "/usr/lib/tree-sitter/",
-            "/usr/local/lib/tree-sitter/",
-            "/usr/share/tree-sitter/grammars/",
-        };
-        
-        if (const char* envPath = std::getenv("TREE_SITTER_GRAMMAR_PATH")) {
-            searchPaths.insert(searchPaths.begin(), std::string(envPath) + "/");
-        }
-        
         for (const auto& [name, libName, funcName] : languageSpecs) {
             LanguageInfo info;
             info.name = name;
             info.grammarLib = libName;
             info.treeSitterFuncName = funcName;
             
-            for (const auto& searchPath : searchPaths) {
-                std::string fullPath = searchPath + libName;
-                void* handle = dlopen(fullPath.c_str(), RTLD_LAZY);
-                if (handle) {
-                    auto func = reinterpret_cast<TSLanguage* (*)()>(dlsym(handle, funcName.c_str()));
-                    if (func) {
-                        info.dlHandle = handle;
-                        info.languageFunc = func;
-                        m_initialized = true;
-                        break;
-                    }
+            QString fullPath = m_grammarPath + "/" + QString::fromStdString(libName);
+            void* handle = dlopen(fullPath.toStdString().c_str(), RTLD_LAZY);
+            if (handle) {
+                auto func = reinterpret_cast<TSLanguage* (*)()>(dlsym(handle, funcName.c_str()));
+                if (func) {
+                    info.dlHandle = handle;
+                    info.languageFunc = func;
+                    m_initialized = true;
+                } else {
                     dlclose(handle);
                 }
             }
@@ -823,6 +846,7 @@ private:
     std::unordered_map<std::string, LanguageInfo> m_languages;
     mutable std::mutex m_parserMutex;
     bool m_initialized;
+    QString m_grammarPath;
 };
 
 Color Color::fromHex(const std::string& hex) {

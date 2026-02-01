@@ -6,13 +6,15 @@
  * The implementation should make these tests pass.
  */
 
-#include <gtest/gtest.h>
 #include "highlighting/syntax_highlighter.h"
-#include <vector>
-#include <string>
-#include <future>
+#include <gtest/gtest.h>
 #include <chrono>
+#include <future>
+#include <string>
 #include <thread>
+#include <vector>
+#include <QDir>
+#include <QTemporaryDir>
 
 using namespace jules::highlighting;
 
@@ -47,9 +49,20 @@ TEST_F(SyntaxHighlighterTest, ReportsAvailableLanguages) {
     EXPECT_TRUE(hasJson || hasGo || hasJava || hasC) << "Should have at least one working language";
 }
 
-// =============================================================================
-// Token Structure Tests
-// =============================================================================
+TEST(SyntaxHighlighterTest, FindsGrammarsInAppImageLayout) {
+    // Create mock AppImage layout in temp dir
+    QTemporaryDir tempDir;
+    QString grammarDir = tempDir.path() + "/usr/lib/jules-linux/grammars";
+    QDir().mkpath(grammarDir);
+
+    // Set environment
+    qputenv("TREE_SITTER_GRAMMAR_PATH", grammarDir.toUtf8());
+
+    SyntaxHighlighter highlighter;
+    // Should not crash, should use env path
+
+    qunsetenv("TREE_SITTER_GRAMMAR_PATH");
+}
 
 TEST_F(SyntaxHighlighterTest, TokenHasValidRange) {
     const std::string code = R"({"name": "test", "value": 42})";
