@@ -2,4 +2,13 @@
 <RCC version="1.0">
     <!-- Qt resource file for Jules application -->
     <!-- Icons and assets will be added here as the project grows -->
+    <qresource prefix="/icons">
+        <file>icons/jules.svg</file>
+        <file>icons/jules-256.png</file>
+        <file>icons/jules-128.png</file>
+        <file>icons/jules-64.png</file>
+        <file>icons/jules-48.png</file>
+        <file>icons/jules-32.png</file>
+        <file>icons/jules-16.png</file>
+    </qresource>
 </RCC>

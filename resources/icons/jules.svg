@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect x="16" y="16" width="224" height="224" rx="48" fill="#4285F4"/>
+
+  <!-- Icon content (example: stylized J) -->
+  <text x="128" y="180"
+        font-family="SF Pro, -apple-system, sans-serif"
+        font-size="160"
+        font-weight="600"
+        fill="white"
+        text-anchor="middle">J</text>
+</svg>

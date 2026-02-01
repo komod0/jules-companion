@@ -10,22 +10,33 @@ namespace jules {
 namespace {
 
 QIcon createStateIcon(const QColor& color, const QColor& accent = QColor()) {
-    const int size = 22;
-    QPixmap pixmap(size, size);
-    pixmap.fill(Qt::transparent);
-    
+    QPixmap pixmap(":/icons/jules-32.png");
+    if (pixmap.isNull()) {
+        // Fallback if icon resource not available
+        const int size = 22;
+        pixmap = QPixmap(size, size);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setBrush(color);
+        painter.setPen(Qt::NoPen);
+        painter.drawEllipse(2, 2, size - 4, size - 4);
+        painter.end();
+        return QIcon(pixmap);
+    }
+
     QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing);
-    
-    painter.setBrush(color);
-    painter.setPen(Qt::NoPen);
-    painter.drawEllipse(2, 2, size - 4, size - 4);
-    
+    painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    painter.fillRect(pixmap.rect(), color);
+
     if (accent.isValid()) {
+        painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
         painter.setBrush(accent);
+        painter.setPen(Qt::NoPen);
+        int size = pixmap.width();
         painter.drawEllipse(size/2 - 3, size/2 - 3, 6, 6);
     }
-    
+
     painter.end();
     return QIcon(pixmap);
 }
