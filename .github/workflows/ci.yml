@@ -28,32 +28,48 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            git \
             cmake \
             build-essential \
             qt6-base-dev \
             qt6-tools-dev \
-            libgl1-mesa-dev
+            libqt6opengl6-dev \
+            libqt6sql6-sqlite \
+            libgl1-mesa-dev \
+            libfreetype-dev \
+            libxcb-keysyms1-dev \
+            xvfb
 
       - name: Install dependencies (Fedora)
         if: matrix.distro == 'fedora'
         run: |
           sudo dnf install -y \
+            git \
             cmake \
             gcc-c++ \
             make \
             qt6-qtbase-devel \
             qt6-qttools-devel \
-            mesa-libGL-devel
+            mesa-libGL-devel \
+            freetype-devel \
+            libxcb-devel \
+            xcb-util-keysyms-devel \
+            xorg-x11-server-Xvfb
 
       - name: Install dependencies (Arch)
         if: matrix.distro == 'arch'
         run: |
           sudo pacman -Syu --noconfirm
           sudo pacman -S --noconfirm \
+            git \
             cmake \
             base-devel \
             qt6-base \
-            mesa
+            mesa \
+            freetype2 \
+            libxcb \
+            xcb-util-keysyms \
+            xorg-server-xvfb
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -64,4 +80,4 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          ctest --output-on-failure
+          xvfb-run --auto-servernum ctest --output-on-failure
