@@ -70,6 +70,14 @@ target_link_libraries(jules_data PUBLIC
     Qt6::Sql
 )
 
+# Create jules_core library
+add_library(jules_core STATIC
+    src/core/settings_manager.cpp
+    include/core/settings_manager.h
+)
+target_include_directories(jules_core PUBLIC include)
+target_link_libraries(jules_core PUBLIC Qt6::Core Qt6::Widgets)
+
 add_library(jules_highlighting STATIC
     src/highlighting/syntax_highlighter.cpp
     include/highlighting/syntax_highlighter.h
@@ -175,6 +183,7 @@ add_executable(jules-linux
 
 target_link_libraries(jules-linux PRIVATE
     jules_api
+    jules_core
     jules_data
     jules_highlighting
     jules_ui

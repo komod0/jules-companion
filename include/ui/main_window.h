@@ -5,17 +5,12 @@
 #include <QToolBar>
 #include <QStatusBar>
 #include <QSettings>
+#include "core/theme.h"
 
 namespace jules {
 
 class FlashMessageWidget;
 enum class FlashMessageType;
-
-enum class Theme {
-    Light,
-    Dark,
-    System
-};
 
 class MainWindow : public QMainWindow {
     Q_OBJECT

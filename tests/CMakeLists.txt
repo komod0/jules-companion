@@ -188,3 +188,17 @@ add_test(NAME wave_widget COMMAND wave_widget_test)
 set_tests_properties(wave_widget PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
+
+# Settings Manager test executable
+add_executable(settings_manager_test settings_manager_test.cpp)
+target_link_libraries(settings_manager_test PRIVATE
+    gtest
+    gtest_main
+    jules_core
+    jules_ui
+    Qt6::Core
+    Qt6::Test
+)
+target_include_directories(settings_manager_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+add_test(NAME settings_manager COMMAND settings_manager_test)

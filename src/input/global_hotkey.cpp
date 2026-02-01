@@ -497,6 +497,8 @@ bool X11HotkeyBackend::nativeEventFilter(const QByteArray&, void*, qintptr*) {
 
 #else
 
+struct X11HotkeyBackend::Impl {};
+
 X11HotkeyBackend::X11HotkeyBackend(QObject* parent) : GlobalHotkeyBackend(parent) {}
 X11HotkeyBackend::~X11HotkeyBackend() = default;
 bool X11HotkeyBackend::registerHotkey(const HotkeyBinding&) { return false; }
