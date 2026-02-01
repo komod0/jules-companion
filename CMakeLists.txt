@@ -59,8 +59,10 @@ target_link_libraries(jules_api PUBLIC
 add_library(jules_data STATIC
     src/data/database.cpp
     src/data/session_repository.cpp
+    src/data/settings_manager.cpp
     include/data/database.h
     include/data/session_repository.h
+    include/data/settings_manager.h
 )
 
 target_include_directories(jules_data PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
