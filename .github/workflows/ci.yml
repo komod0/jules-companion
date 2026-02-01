@@ -48,7 +48,8 @@ jobs:
             qt6-qtbase-devel \
             qt6-qttools-devel \
             mesa-libGL-devel \
-            git
+            git \
+            freetype-devel
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release

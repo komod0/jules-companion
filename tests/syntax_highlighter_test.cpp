@@ -49,7 +49,7 @@ TEST_F(SyntaxHighlighterTest, ReportsAvailableLanguages) {
     EXPECT_TRUE(hasJson || hasGo || hasJava || hasC) << "Should have at least one working language";
 }
 
-TEST(SyntaxHighlighterTest, FindsGrammarsInAppImageLayout) {
+TEST_F(SyntaxHighlighterTest, FindsGrammarsInAppImageLayout) {
     // Create mock AppImage layout in temp dir
     QTemporaryDir tempDir;
     QString grammarDir = tempDir.path() + "/usr/lib/jules-linux/grammars";
