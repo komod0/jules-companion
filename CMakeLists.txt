@@ -100,12 +100,14 @@ add_library(jules_ui STATIC
     src/ui/session_detail_widget.cpp
     src/ui/system_tray.cpp
     src/ui/flash_message_widget.cpp
+    src/ui/hotkey_edit.cpp
     include/ui/main_window.h
     include/ui/session_list_widget.h
     include/ui/new_session_dialog.h
     include/ui/session_detail_widget.h
     include/ui/system_tray.h
     include/ui/flash_message_widget.h
+    include/ui/hotkey_edit.h
 )
 
 target_include_directories(jules_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -113,6 +115,7 @@ target_link_libraries(jules_ui PUBLIC
     jules_api
     jules_data
     jules_rendering
+    jules_input
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
