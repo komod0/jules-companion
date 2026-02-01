@@ -216,3 +216,56 @@ add_custom_command(TARGET opengl_spike POST_BUILD
 
 # Add tests subdirectory
 add_subdirectory(tests)
+
+# =============================================================================
+# Installation Rules
+# =============================================================================
+
+include(GNUInstallDirs)
+
+# Main executable
+install(TARGETS jules-linux
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    COMPONENT Runtime
+)
+
+# Tree-sitter grammars
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/grammars/
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/jules-linux/grammars
+    COMPONENT Runtime
+    FILES_MATCHING PATTERN "*.so"
+)
+
+# Desktop entry
+install(FILES ${CMAKE_SOURCE_DIR}/resources/jules-linux.desktop
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
+    COMPONENT Runtime
+)
+
+# Icons - scalable
+install(FILES ${CMAKE_SOURCE_DIR}/resources/icons/jules.svg
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+    COMPONENT Runtime
+    OPTIONAL
+)
+
+# Icons - fixed sizes
+foreach(SIZE 256 128 64 48 32 16)
+    install(FILES ${CMAKE_SOURCE_DIR}/resources/icons/jules-${SIZE}.png
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${SIZE}x${SIZE}/apps
+        RENAME jules.png
+        COMPONENT Runtime
+        OPTIONAL
+    )
+endforeach()
+
+# CPack configuration for creating packages
+set(CPACK_PACKAGE_NAME "jules-linux")
+set(CPACK_PACKAGE_VENDOR "Jules")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "AI Coding Assistant for Linux")
+set(CPACK_PACKAGE_VERSION_MAJOR 1)
+set(CPACK_PACKAGE_VERSION_MINOR 0)
+set(CPACK_PACKAGE_VERSION_PATCH 0)
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+
+include(CPack)
