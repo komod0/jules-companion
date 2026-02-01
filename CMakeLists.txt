@@ -84,6 +84,7 @@ target_include_directories(jules_highlighting PUBLIC
 target_link_libraries(jules_highlighting PUBLIC
     tree-sitter-lib
     ${CMAKE_DL_LIBS}
+    Qt6::Core
 )
 
 set(GRAMMARS_DIR ${CMAKE_SOURCE_DIR}/grammars)
