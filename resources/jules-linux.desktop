@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Name=Jules
+Comment=AI Coding Assistant for Linux
+Exec=jules-linux
+Icon=jules
+Terminal=false
+Type=Application
+Categories=Development;
