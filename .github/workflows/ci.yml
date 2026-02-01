@@ -7,49 +7,16 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  test:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            distro: ubuntu
-          - os: ubuntu-latest
-            distro: fedora
-          - os: ubuntu-latest
-            distro: arch
-
-    runs-on: ${{ matrix.os }}
-
+  ubuntu-test:
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Install dependencies (Ubuntu 22.04)
-        if: matrix.distro == 'ubuntu'
+      - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            cmake \
-            build-essential \
-            qt6-base-dev \
-            qt6-tools-dev \
-            libgl1-mesa-dev
-
-      - name: Install dependencies (Fedora)
-        if: matrix.distro == 'fedora'
-        run: |
-          sudo dnf install -y \
-            cmake \
-            gcc-c++ \
-            make \
-            qt6-qtbase-devel \
-            qt6-qttools-devel \
-            mesa-libGL-devel
-
-      - name: Install dependencies (Arch)
-        if: matrix.distro == 'arch'
-        run: |
-          sudo pacman -Syu --noconfirm
-          sudo pacman -S --noconfirm \
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm \
             cmake \
             base-devel \
             qt6-base \
@@ -65,3 +32,59 @@ jobs:
         run: |
           cd build
           ctest --output-on-failure
+
+      - name: Install dependencies
+        run: |
+          dnf install -y \
+            cmake \
+            gcc-c++ \
+            make \
+            qt6-qtbase-devel \
+            qt6-qttools-devel \
+            mesa-libGL-devel
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run tests
+        run: |
+          cd build
+          ctest --output-on-failure
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            build-essential \
+            qt6-base-dev \
+            qt6-tools-dev \
+            libgl1-mesa-dev
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run tests
+        run: |
+          cd build
+          ctest --output-on-failure
+
+  fedora-test:
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+  arch-test:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
