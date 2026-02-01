@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Jules
+GenericName=AI Coding Assistant
+Comment=Native Linux client for Jules AI coding assistant
+Exec=jules-linux %F
+Icon=jules
+Terminal=false
+Categories=Development;IDE;TextEditor;
+Keywords=ai;coding;assistant;development;programming;
+StartupNotify=true
+StartupWMClass=jules-linux
+MimeType=
+Actions=new-session;
+
+[Desktop Action new-session]
+Name=New Session
+Exec=jules-linux --new-session
