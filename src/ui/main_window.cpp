@@ -1,4 +1,5 @@
 #include "ui/main_window.h"
+#include "ui/flash_message_widget.h"
 
 #include <QApplication>
 #include <QVBoxLayout>
@@ -97,6 +98,7 @@ MainWindow::MainWindow(QWidget* parent)
     , m_sidebar(nullptr)
     , m_content(nullptr)
     , m_toolbar(nullptr)
+    , m_flashMessage(nullptr)
     , m_theme(Theme::System)
     , m_effectiveTheme(Theme::Light)
 {
@@ -331,6 +333,17 @@ void MainWindow::setSidebarVisible(bool visible) {
 
 void MainWindow::setStatusBarVisible(bool visible) {
     statusBar()->setVisible(visible);
+}
+
+void MainWindow::showFlashMessage(const QString& message, FlashMessageType type, int durationMs) {
+    if (!m_flashMessage) {
+        m_flashMessage = new FlashMessageWidget(this);
+        m_flashMessage->setGeometry(0, 0, width(), 80);
+    }
+    m_flashMessage->setFixedWidth(width());
+    m_flashMessage->move(0, 0);
+    m_flashMessage->raise();
+    m_flashMessage->showMessage(message, type, durationMs);
 }
 
 }

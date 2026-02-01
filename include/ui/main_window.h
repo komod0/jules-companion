@@ -8,6 +8,9 @@
 
 namespace jules {
 
+class FlashMessageWidget;
+enum class FlashMessageType;
+
 enum class Theme {
     Light,
     Dark,
@@ -34,6 +37,8 @@ public:
 
     void setSidebarVisible(bool visible);
     void setStatusBarVisible(bool visible);
+    
+    void showFlashMessage(const QString& message, FlashMessageType type, int durationMs = 3000);
 
 signals:
     void themeChanged(Theme theme);
@@ -51,6 +56,7 @@ private:
     QWidget* m_sidebar;
     QWidget* m_content;
     QToolBar* m_toolbar;
+    FlashMessageWidget* m_flashMessage = nullptr;
     Theme m_theme = Theme::System;
     Theme m_effectiveTheme = Theme::Light;
 };

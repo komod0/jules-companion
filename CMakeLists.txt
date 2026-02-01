@@ -99,20 +99,25 @@ add_library(jules_ui STATIC
     src/ui/new_session_dialog.cpp
     src/ui/session_detail_widget.cpp
     src/ui/system_tray.cpp
+    src/ui/flash_message_widget.cpp
     include/ui/main_window.h
     include/ui/session_list_widget.h
     include/ui/new_session_dialog.h
     include/ui/session_detail_widget.h
     include/ui/system_tray.h
+    include/ui/flash_message_widget.h
 )
 
 target_include_directories(jules_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(jules_ui PUBLIC
     jules_api
     jules_data
+    jules_rendering
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
+    Qt6::OpenGL
+    Qt6::OpenGLWidgets
 )
 
 # Jules Input Library (Global Hotkeys - X11/Wayland)
@@ -141,10 +146,12 @@ add_library(jules_rendering STATIC
     src/rendering/opengl_widget.cpp
     src/rendering/diff_renderer.cpp
     src/rendering/boids_widget.cpp
+    src/rendering/wave_widget.cpp
     include/rendering/font_atlas.h
     include/rendering/opengl_widget.h
     include/rendering/diff_renderer.h
     include/rendering/boids_widget.h
+    include/rendering/wave_widget.h
 )
 
 target_include_directories(jules_rendering PUBLIC 

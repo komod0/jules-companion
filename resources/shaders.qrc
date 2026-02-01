@@ -8,5 +8,7 @@
         <file alias="boids.comp">../shaders/boids.comp</file>
         <file alias="boids.vert">../shaders/boids.vert</file>
         <file alias="boids.frag">../shaders/boids.frag</file>
+        <file alias="wave.vert">../shaders/wave.vert</file>
+        <file alias="wave.frag">../shaders/wave.frag</file>
     </qresource>
 </RCC>

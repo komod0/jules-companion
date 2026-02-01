@@ -753,7 +753,7 @@ Parallel Speedup: ~40% faster than sequential
 
 ### Phase 3: GPU Rendering
 
-- [ ] 10. Full Diff Renderer with Syntax Highlighting
+- [x] 10. Full Diff Renderer with Syntax Highlighting
 
   **What to do**:
   - Extend OpenGL spike to full diff renderer
@@ -814,7 +814,7 @@ Parallel Speedup: ~40% faster than sequential
 
 ---
 
-- [ ] 11. Boids Animation
+- [x] 11. Boids Animation
 
   **What to do**:
   - Port Boids particle system from Mac (BoidsShaders.metal)
@@ -867,7 +867,7 @@ Parallel Speedup: ~40% faster than sequential
 
 ---
 
-- [ ] 12. Wave Background Animation
+- [x] 12. Wave Background Animation
 
   **What to do**:
   - Port Gerstner wave animation from Mac (WaveShaders.metal)

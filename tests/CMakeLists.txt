@@ -171,3 +171,20 @@ add_test(NAME boids COMMAND boids_test)
 set_tests_properties(boids PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
+
+add_executable(wave_widget_test wave_widget_test.cpp)
+target_link_libraries(wave_widget_test PRIVATE 
+    gtest 
+    jules_rendering
+    Qt6::Core 
+    Qt6::Gui
+    Qt6::OpenGL
+    Qt6::OpenGLWidgets
+)
+target_include_directories(wave_widget_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+add_test(NAME wave_widget COMMAND wave_widget_test)
+
+set_tests_properties(wave_widget PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
