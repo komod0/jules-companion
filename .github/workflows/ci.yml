@@ -47,7 +47,8 @@ jobs:
             make \
             qt6-qtbase-devel \
             qt6-qttools-devel \
-            mesa-libGL-devel
+            mesa-libGL-devel \
+            git
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -73,7 +74,8 @@ jobs:
             cmake \
             base-devel \
             qt6-base \
-            mesa
+            mesa \
+            git
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
