@@ -9,6 +9,7 @@
 #include <QStyleHints>
 #include <QPalette>
 #include <QScreen>
+#include <QtGlobal>
 
 namespace jules {
 
@@ -106,6 +107,7 @@ MainWindow::MainWindow(QWidget* parent)
     updateEffectiveTheme();
     applyTheme();
     
+#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
     if (QGuiApplication::styleHints()) {
         connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
                 this, [this]() {
@@ -115,6 +117,7 @@ MainWindow::MainWindow(QWidget* parent)
             }
         });
     }
+#endif
 }
 
 MainWindow::~MainWindow() = default;
