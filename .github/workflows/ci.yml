@@ -16,11 +16,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            cmake \
             build-essential \
+            cmake \
+            git \
+            libgl1-mesa-dev \
+            libvulkan-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libxkbcommon-dev \
             qt6-base-dev \
             qt6-tools-dev \
-            libgl1-mesa-dev
+            xvfb
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -31,7 +37,7 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          ctest --output-on-failure
+          xvfb-run ctest --output-on-failure
 
   test-fedora:
     runs-on: ubuntu-latest
@@ -45,10 +51,17 @@ jobs:
           dnf install -y \
             cmake \
             gcc-c++ \
+            git-core \
+            libX11-devel \
+            libxcb-devel \
+            libxkbcommon-devel \
             make \
+            mesa-libGL-devel \
             qt6-qtbase-devel \
             qt6-qttools-devel \
-            mesa-libGL-devel
+            vulkan-headers \
+            vulkan-loader-devel \
+            xorg-x11-server-Xvfb
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -59,7 +72,7 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          ctest --output-on-failure
+          xvfb-run ctest --output-on-failure
 
   test-arch:
     runs-on: ubuntu-latest
@@ -68,14 +81,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Initialize pacman keyring
+        run: |
+          pacman-key --init
+          pacman-key --populate
+
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm
           pacman -S --noconfirm \
-            cmake \
             base-devel \
+            cmake \
+            git \
+            libx11 \
+            libxcb \
+            libxkbcommon \
+            mesa \
             qt6-base \
-            mesa
+            qt6-tools \
+            vulkan-headers \
+            vulkan-icd-loader \
+            xvfb
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -86,4 +112,4 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          ctest --output-on-failure
+          xvfb-run ctest --output-on-failure
