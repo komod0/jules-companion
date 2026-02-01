@@ -202,3 +202,19 @@ target_include_directories(settings_manager_test PRIVATE ${CMAKE_SOURCE_DIR}/inc
 
 # Register Settings Manager test with CTest
 add_test(NAME settings_manager COMMAND settings_manager_test)
+
+# HotkeyEdit widget test executable
+add_executable(hotkey_edit_test hotkey_edit_test.cpp)
+target_link_libraries(hotkey_edit_test PRIVATE
+    gtest
+    gtest_main
+    jules_ui
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::Test
+)
+target_include_directories(hotkey_edit_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+# Register HotkeyEdit test with CTest
+add_test(NAME hotkey_edit COMMAND hotkey_edit_test)
