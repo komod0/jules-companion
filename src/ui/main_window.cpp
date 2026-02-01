@@ -106,6 +106,7 @@ MainWindow::MainWindow(QWidget* parent)
     updateEffectiveTheme();
     applyTheme();
     
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     if (QGuiApplication::styleHints()) {
         connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
                 this, [this]() {
@@ -115,6 +116,7 @@ MainWindow::MainWindow(QWidget* parent)
             }
         });
     }
+#endif
 }
 
 MainWindow::~MainWindow() = default;
@@ -262,10 +264,12 @@ void MainWindow::updateEffectiveTheme() {
 }
 
 bool MainWindow::isSystemDarkMode() const {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     if (QGuiApplication::styleHints()) {
         auto scheme = QGuiApplication::styleHints()->colorScheme();
         return scheme == Qt::ColorScheme::Dark;
     }
+#endif
     
     QPalette systemPalette = QGuiApplication::palette();
     QColor windowColor = systemPalette.color(QPalette::Window);
