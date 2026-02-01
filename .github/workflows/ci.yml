@@ -15,12 +15,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm \
+          sudo apt-get update
+          sudo apt-get install -y \
             cmake \
-            base-devel \
-            qt6-base \
-            mesa
+            build-essential \
+            qt6-base-dev \
+            qt6-tools-dev \
+            libgl1-mesa-dev
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -32,6 +33,14 @@ jobs:
         run: |
           cd build
           ctest --output-on-failure
+
+  fedora-test:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -54,15 +63,22 @@ jobs:
           cd build
           ctest --output-on-failure
 
+  arch-test:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm \
             cmake \
-            build-essential \
-            qt6-base-dev \
-            qt6-tools-dev \
-            libgl1-mesa-dev
+            base-devel \
+            qt6-base \
+            mesa
 
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -74,17 +90,3 @@ jobs:
         run: |
           cd build
           ctest --output-on-failure
-
-  fedora-test:
-    runs-on: ubuntu-latest
-    container: fedora:latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-  arch-test:
-    runs-on: ubuntu-latest
-    container: archlinux:latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
