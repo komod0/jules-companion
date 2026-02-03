@@ -6,19 +6,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
-# Example test executable
-add_executable(example_test example_test.cpp)
-target_link_libraries(example_test PRIVATE gtest gtest_main Qt6::Core)
-
-# Register test with CTest
-add_test(NAME ExampleTest COMMAND example_test)
-
-# Smoke test executable
-add_executable(smoke_test smoke_test.cpp)
-target_link_libraries(smoke_test PRIVATE gtest gtest_main Qt6::Core Qt6::Gui Qt6::Widgets)
-
-# Register smoke test with CTest
-add_test(NAME smoke COMMAND smoke_test)
+# Note: example_test.cpp and smoke_test.cpp were removed as they only tested
+# trivial assertions. All meaningful tests are below.
 
 # API Client test executable
 add_executable(api_client_test api_client_test.cpp)
@@ -193,9 +182,10 @@ set_tests_properties(wave_widget PROPERTIES
 add_executable(settings_manager_test settings_manager_test.cpp)
 target_link_libraries(settings_manager_test PRIVATE
     gtest
-    gtest_main
     jules_data
     Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
     Qt6::Test
 )
 target_include_directories(settings_manager_test PRIVATE ${CMAKE_SOURCE_DIR}/include)

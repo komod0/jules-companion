@@ -104,6 +104,7 @@ add_library(jules_ui STATIC
     src/ui/system_tray.cpp
     src/ui/flash_message_widget.cpp
     src/ui/hotkey_edit.cpp
+    src/ui/settings_dialog.cpp
     include/ui/main_window.h
     include/ui/session_list_widget.h
     include/ui/new_session_dialog.h
@@ -111,6 +112,7 @@ add_library(jules_ui STATIC
     include/ui/system_tray.h
     include/ui/flash_message_widget.h
     include/ui/hotkey_edit.h
+    include/ui/settings_dialog.h
 )
 
 target_include_directories(jules_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

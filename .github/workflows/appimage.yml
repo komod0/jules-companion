@@ -1,0 +1,193 @@
+name: AppImage Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Create a release'
+        required: false
+        default: 'false'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            g++ \
+            qt6-base-dev \
+            qt6-tools-dev \
+            qt6-tools-dev-tools \
+            libqt6opengl6-dev \
+            libqt6sql6-sqlite \
+            libfreetype-dev \
+            libxcb-keysyms1-dev \
+            libfuse2 \
+            desktop-file-utils \
+            wget
+
+      - name: Build tree-sitter grammars
+        continue-on-error: true
+        run: |
+          if [ -f scripts/build-grammars.sh ]; then
+            bash scripts/build-grammars.sh
+          fi
+
+      - name: Build AppImage
+        run: bash scripts/build-appimage.sh
+
+      - name: Verify AppImage
+        run: |
+          if [ -f Jules-x86_64.AppImage ]; then
+            echo "AppImage created successfully"
+            chmod +x Jules-x86_64.AppImage
+            ./Jules-x86_64.AppImage --appimage-extract
+            echo "AppImage contents:"
+            ls -la squashfs-root/
+          else
+            echo "Error: AppImage not found"
+            exit 1
+          fi
+
+      - name: Test AppImage launch
+        continue-on-error: true
+        run: |
+          if [ -f Jules-x86_64.AppImage ]; then
+            timeout 5 ./Jules-x86_64.AppImage --help || true
+          fi
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jules-AppImage
+          path: Jules-x86_64.AppImage
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download AppImage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Jules-AppImage
+
+      - name: Get version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Check if prerelease
+          if [[ "$VERSION" =~ alpha|beta|rc ]]; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref }}
+          name: Jules ${{ steps.version.outputs.version }}
+          body: |
+            # Jules Companion v${{ steps.version.outputs.version }}
+            
+            ## Installation
+            
+            ### Linux (AppImage)
+            
+            1. Download `Jules-x86_64.AppImage`
+            2. Make it executable:
+               ```bash
+               chmod +x Jules-x86_64.AppImage
+               ```
+            3. Run it:
+               ```bash
+               ./Jules-x86_64.AppImage
+               ```
+            
+            ### Integration with Desktop
+            
+            To integrate Jules with your desktop environment:
+            
+            ```bash
+            # Create a desktop entry
+            mkdir -p ~/.local/share/applications
+            cat > ~/.local/share/applications/jules.desktop << EOF
+            [Desktop Entry]
+            Type=Application
+            Name=Jules Companion
+            Exec=$HOME/path/to/Jules-x86_64.AppImage
+            Icon=application-x-executable
+            Categories=Development;
+            EOF
+            
+            # Update desktop database
+            update-desktop-database ~/.local/share/applications
+            ```
+            
+            ## Requirements
+            
+            - Linux x86_64 system
+            - GLIBC 2.35 or later (Ubuntu 22.04+, Fedora 36+, Arch current)
+            - OpenGL 4.3+ capable GPU
+            - FUSE2 library (usually pre-installed)
+            
+            ## Features
+            
+            - Session Management
+            - Real-time Updates
+            - Diff Viewing with OpenGL acceleration
+            - Syntax Highlighting (20+ languages)
+            - GPU Animations
+            - System Tray Integration
+            - Global Hotkeys (Ctrl+Alt+J)
+            - Dark/Light Theme
+            
+            ## Troubleshooting
+            
+            ### AppImage won't run
+            
+            Ensure FUSE2 is installed:
+            ```bash
+            sudo apt install libfuse2  # Ubuntu/Debian
+            sudo dnf install fuse-libs  # Fedora
+            sudo pacman -S fuse2        # Arch
+            ```
+            
+            ### Missing dependencies
+            
+            If you see library errors, install Qt6 runtime:
+            ```bash
+            sudo apt install qt6-base  # Ubuntu/Debian
+            ```
+            
+            ## Release Notes
+            
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for detailed changes.
+          files: Jules-x86_64.AppImage
+          prerelease: ${{ steps.version.outputs.prerelease }}
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
