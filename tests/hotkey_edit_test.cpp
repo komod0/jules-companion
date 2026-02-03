@@ -8,21 +8,18 @@
 
 class HotkeyEditTest : public ::testing::Test {
 protected:
-    static void SetUpTestSuite() {
-        if (!QApplication::instance()) {
-            static int argc = 0;
-            static char** argv = nullptr;
-            static QApplication app(argc, argv);
-        }
-    }
-    
-    static void TearDownTestSuite() {
-        // Process any pending events to help with clean shutdown
-        if (QApplication::instance()) {
-            QApplication::processEvents();
-        }
-    }
+    // No static QApplication - it's created in main() below
 };
+
+// Custom main to control QApplication lifetime properly
+int main(int argc, char** argv) {
+    QApplication app(argc, argv);
+    ::testing::InitGoogleTest(&argc, argv);
+    int result = RUN_ALL_TESTS();
+    // Let app clean up properly before returning
+    QApplication::processEvents();
+    return result;
+}
 
 TEST_F(HotkeyEditTest, InitialStateShowsDefaultBinding) {
     // HotkeyBinding defaults to Ctrl+Alt+J

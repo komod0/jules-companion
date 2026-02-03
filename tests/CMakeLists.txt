@@ -194,10 +194,11 @@ target_include_directories(settings_manager_test PRIVATE ${CMAKE_SOURCE_DIR}/inc
 add_test(NAME settings_manager COMMAND settings_manager_test)
 
 # HotkeyEdit widget test executable
+# Note: Uses custom main() instead of gtest_main to control QApplication lifetime
+# (fixes segfault in teardown on Fedora containers)
 add_executable(hotkey_edit_test hotkey_edit_test.cpp)
 target_link_libraries(hotkey_edit_test PRIVATE
     gtest
-    gtest_main
     jules_ui
     Qt6::Core
     Qt6::Gui
