@@ -29,12 +29,13 @@ const int DEFAULT_SIDEBAR_WIDTH = 280;
 QPalette createDarkPalette() {
     QPalette palette;
     
-    QColor darkBg(30, 30, 30);
-    QColor darkerBg(20, 20, 20);
-    QColor lightText(240, 240, 240);
-    QColor dimText(160, 160, 160);
-    QColor accent(88, 166, 255);
-    QColor highlight(0, 120, 212);
+    // Match macOS AppColors.swift dark mode colors
+    QColor darkBg(32, 33, 36);          // #202124 - background
+    QColor darkerBg(22, 22, 26);        // #16161a - backgroundDark
+    QColor lightText(240, 240, 240);    // white equivalent
+    QColor dimText(122, 115, 132);      // #7a7384 - textSecondary
+    QColor accent(178, 163, 255);       // #B2A3FF - purple accent (dark mode)
+    QColor highlight(178, 163, 255);    // Same purple for selection
     
     palette.setColor(QPalette::Window, darkBg);
     palette.setColor(QPalette::WindowText, lightText);
@@ -61,12 +62,13 @@ QPalette createDarkPalette() {
 QPalette createLightPalette() {
     QPalette palette;
     
-    QColor lightBg(250, 250, 250);
-    QColor white(255, 255, 255);
-    QColor darkText(30, 30, 30);
-    QColor dimText(120, 120, 120);
-    QColor accent(0, 120, 212);
-    QColor highlight(0, 120, 212);
+    // Match macOS AppColors.swift light mode colors
+    QColor lightBg(255, 255, 255);      // #FFFFFF - background
+    QColor white(245, 245, 247);        // #F5F5F7 - backgroundSecondary
+    QColor darkText(29, 29, 31);        // #1D1D1F - textPrimary
+    QColor dimText(110, 110, 115);      // #6E6E73 - textSecondary
+    QColor accent(123, 97, 255);        // #7B61FF - purple accent (light mode)
+    QColor highlight(123, 97, 255);     // Same purple for selection
     
     palette.setColor(QPalette::Window, lightBg);
     palette.setColor(QPalette::WindowText, darkText);
