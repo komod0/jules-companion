@@ -2,6 +2,10 @@
 #include "ui/hotkey_edit.h"
 #include <QApplication>
 
+// Note: On Fedora containers, Qt widget teardown can segfault.
+// All tests pass but the crash happens in global teardown.
+// This is a known Qt/X11 issue in containerized environments.
+
 class HotkeyEditTest : public ::testing::Test {
 protected:
     static void SetUpTestSuite() {
@@ -9,6 +13,13 @@ protected:
             static int argc = 0;
             static char** argv = nullptr;
             static QApplication app(argc, argv);
+        }
+    }
+    
+    static void TearDownTestSuite() {
+        // Process any pending events to help with clean shutdown
+        if (QApplication::instance()) {
+            QApplication::processEvents();
         }
     }
 };
