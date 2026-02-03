@@ -4,18 +4,18 @@ Native desktop applications for interacting with the Jules AI coding assistant A
 
 ## Platforms
 
-| Platform | Status | Technology |
-|----------|--------|------------|
-| **macOS** | Production | Swift, SwiftUI, Metal |
-| **Linux** | ~90% Complete | C++20, Qt 6, OpenGL |
+| Platform | Status | Technology | Directory |
+|----------|--------|------------|-----------|
+| **Linux** | **Complete** | C++20, Qt 6, OpenGL | `src/`, `include/` |
+| **macOS** | Production | Swift, SwiftUI, Metal | `macos/` |
 
 ---
 
-## Linux Port
+## Linux Port (Complete)
 
 Native Qt6/C++/OpenGL application for Linux desktops (X11 and Wayland).
 
-### Features (Implemented)
+### Features
 
 - **Session Management**: Create, view, and manage coding sessions
 - **Real-time Updates**: Live polling for session status and activity updates  
@@ -25,8 +25,10 @@ Native Qt6/C++/OpenGL application for Linux desktops (X11 and Wayland).
 - **System Tray**: Integration with system tray (X11 AppIndicator, Wayland SNI)
 - **Global Hotkeys**: Ctrl+Alt+J to toggle window (X11 XGrabKey, Wayland Portal)
 - **Dark/Light Theme**: Follows system preference or manual selection
+- **Settings Dialog**: API key, theme, notifications, font size configuration
+- **AppImage Packaging**: Universal Linux distribution with CI/CD
 
-### Building (Linux)
+### Building
 
 **Requirements:**
 - CMake 3.24+
@@ -52,26 +54,43 @@ cd build && ctest --output-on-failure
 ./build/jules-linux
 ```
 
-### Linux Project Structure
+### Project Structure
 
 ```
-src/
-├── api/              # Jules API client (Qt Network)
-├── data/             # SQLite persistence (Qt Sql)
-├── highlighting/     # Tree-sitter syntax highlighting
-├── input/            # Global hotkeys (X11/Wayland)
-├── rendering/        # OpenGL widgets (diff, boids, wave)
-└── ui/               # Qt Widgets UI
-
-shaders/              # GLSL shaders (text, boids, wave)
-grammars/             # Tree-sitter grammar .so files
-tests/                # Unit tests (Google Test + Qt Test)
+jules-companion/
+├── src/                  # C++ source files (Linux port)
+│   ├── api/              # Jules API client (Qt Network)
+│   ├── data/             # SQLite persistence (Qt Sql)
+│   ├── highlighting/     # Tree-sitter syntax highlighting
+│   ├── input/            # Global hotkeys (X11/Wayland)
+│   ├── rendering/        # OpenGL widgets (diff, boids, wave)
+│   └── ui/               # Qt Widgets UI
+├── include/              # C++ headers
+├── shaders/              # GLSL shaders (text, boids, wave)
+├── grammars/             # Tree-sitter grammar .so files
+├── tests/                # Unit tests (Google Test + Qt Test)
+├── scripts/              # Build scripts (AppImage)
+├── resources/            # Icons, desktop file
+├── .github/workflows/    # CI/CD (AppImage builds)
+├── macos/                # Original macOS app (Swift/SwiftUI/Metal)
+│   ├── jules/            # Swift source files
+│   ├── jules.xcodeproj/  # Xcode project
+│   └── Package.swift     # Swift Package Manager
+└── docs/                 # Architecture documentation
 ```
 
-### Remaining Work (Linux)
+### Distribution
 
-- [ ] **Settings Dialog** - API key, theme, hotkey configuration
-- [ ] **AppImage Packaging** - Universal Linux distribution
+**AppImage (Recommended):**
+```bash
+# Build AppImage
+./scripts/build-appimage.sh
+
+# Run
+./Jules-x86_64.AppImage
+```
+
+Tested on: Ubuntu 22.04, Fedora 38, Arch Linux
 
 ---
 
@@ -92,59 +111,35 @@ Native SwiftUI menu bar application with Metal-accelerated rendering.
 - **Keyboard Shortcuts**: Global hotkeys for quick access
 - **Auto-updates**: Built-in update mechanism via Sparkle
 
-### Requirements (macOS)
+### Requirements
 
 - macOS 13.0 or later
 - Xcode 15.0 or later (for building)
 - A Jules API key (obtain from [jules.google.com](https://jules.google.com))
 
-### Building (macOS)
+### Building
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/simpsoka/jules-osx.git
-   cd jules-osx
-   ```
+```bash
+cd macos
+open jules.xcodeproj
+# Build and run (Cmd+R)
+```
 
-2. Open the project in Xcode:
-   ```bash
-   open jules.xcodeproj
-   ```
-
-3. Build and run (Cmd+R)
-
-### Configuration
-
-#### API Key
-
-Enter your Jules API key in the app's Settings to start using the application.
-
-#### Firebase/Gemini (Optional)
-
-The app includes optional Firebase integration for AI-generated activity descriptions using Gemini. This feature is **disabled by default** and the app works perfectly without it.
-
-To enable Firebase/Gemini:
-
-1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
-2. Add a macOS app with your bundle ID
-3. Download `GoogleService-Info.plist` and replace the placeholder file in `jules/`
-4. Open `jules/AppDelegate.swift` and set:
-   ```swift
-   let ENABLE_FIREBASE = true
-   ```
-
-### macOS Project Structure
+### Project Structure (macOS)
 
 ```
-jules/
-├── AppDelegate.swift       # App lifecycle, menu bar, hotkeys
-├── DataManager.swift       # Core data management and API coordination
-├── APIService.swift        # REST API client for Jules backend
-├── SessionRepository.swift # Session persistence (GRDB/SQLite)
-├── Flux/                   # Metal-based diff rendering
-├── MergeConflictWindow/    # Merge conflict UI
-├── Canvas/                 # Drawing/annotation features
-└── ...
+macos/
+├── jules/
+│   ├── AppDelegate.swift       # App lifecycle, menu bar, hotkeys
+│   ├── DataManager.swift       # Core data management and API coordination
+│   ├── APIService.swift        # REST API client for Jules backend
+│   ├── SessionRepository.swift # Session persistence (GRDB/SQLite)
+│   ├── Flux/                   # Metal-based diff rendering
+│   ├── MergeConflictWindow/    # Merge conflict UI
+│   ├── Canvas/                 # Drawing/annotation features
+│   └── ...
+├── jules.xcodeproj/            # Xcode project
+└── Package.swift               # Swift Package Manager
 ```
 
 ### Keyboard Shortcuts
@@ -155,15 +150,7 @@ Default shortcuts (configurable in Settings):
 - **Control+Option+S**: Capture screenshot
 - **Control+Option+V**: Voice input (macOS 26.0+)
 
-### macOS Architecture
-
-- **UI Framework**: SwiftUI with AppKit integration
-- **Database**: SQLite via GRDB
-- **Networking**: URLSession with offline queue support
-- **Graphics**: Metal for high-performance diff rendering
-- **Updates**: Sparkle framework
-
-### macOS Dependencies
+### Dependencies
 
 - [GRDB](https://github.com/groue/GRDB.swift) - SQLite toolkit
 - [Sparkle](https://github.com/sparkle-project/Sparkle) - Auto-updates

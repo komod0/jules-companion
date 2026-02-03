@@ -1,4 +1,4 @@
-# Task 13: Settings Dialog Implementation
+# Task 13: Settings Dialog Implementation - COMPLETE
 
 ## Overview
 
@@ -6,10 +6,10 @@
 |-------|-------|
 | **Task ID** | 13 |
 | **Title** | Settings & Persistence |
-| **Priority** | Medium |
-| **Estimated Effort** | 1-2 days |
+| **Status** | **COMPLETE** |
+| **Completed** | 2026-02-03 |
 | **Dependencies** | Tasks 6 (UI Shell), 9 (Global Hotkeys) - both complete |
-| **Blocks** | Task 14 (AppImage Packaging) |
+| **Blocks** | Task 14 (AppImage Packaging) - also complete |
 
 ## Objective
 
@@ -20,15 +20,15 @@ Create a Settings Dialog for the Jules Linux port that allows users to configure
 - Font sizes for activity and diff views
 - Application preferences
 
-## Success Criteria
+## Success Criteria - ALL MET
 
-- [ ] Settings dialog opens from system tray menu
-- [ ] All settings persist across app restarts
-- [ ] API key stored securely (not in plaintext config)
-- [ ] Theme changes apply immediately
-- [ ] Hotkey changes take effect without restart
-- [ ] Font size changes reflected in UI
-- [ ] All 8+ unit tests pass
+- [x] Settings dialog opens from system tray menu
+- [x] All settings persist across app restarts
+- [x] API key stored securely (not in plaintext config)
+- [x] Theme changes apply immediately
+- [x] Hotkey changes take effect without restart
+- [x] Font size changes reflected in UI
+- [x] All 22 unit tests pass
 
 ---
 
@@ -331,13 +331,37 @@ private:
 
 ---
 
-## Verification Checklist
+## Verification Checklist - ALL VERIFIED
 
-- [ ] `cmake --build build` succeeds
-- [ ] `ctest -R settings` passes all tests
-- [ ] Settings dialog opens from tray menu
-- [ ] Theme change applies immediately
-- [ ] Hotkey change works without restart
-- [ ] API key not visible in `~/.config/JulesLinux/Jules.conf`
-- [ ] Font size changes reflected in UI
-- [ ] All settings persist after app restart
+- [x] `cmake --build build` succeeds
+- [x] `ctest -R settings_manager` passes all 22 tests
+- [x] Settings dialog opens from tray menu
+- [x] Theme change applies immediately
+- [x] Hotkey change works without restart
+- [x] API key not visible in plaintext
+- [x] Font size changes reflected in UI (clamped to 9-24 range)
+- [x] All settings persist after app restart
+
+## Implementation Summary
+
+### Files Created
+- `include/data/settings_manager.h` - Theme enum, SettingsManager class with signals
+- `src/data/settings_manager.cpp` - Implementation with QSettings persistence
+- `include/ui/settings_dialog.h` - Dialog with tabs for General, Appearance, Shortcuts
+- `src/ui/settings_dialog.cpp` - Dialog implementation
+- `include/ui/hotkey_edit.h` - Custom widget for shortcut capture
+- `src/ui/hotkey_edit.cpp` - Hotkey capture implementation
+- `tests/settings_manager_test.cpp` - 22 comprehensive tests
+
+### Files Modified  
+- `CMakeLists.txt` - Added new source files
+- `src/main.cpp` - Theme loading on startup, signal connections
+- `include/ui/main_window.h` - Uses Theme from settings_manager.h
+
+### Test Coverage (22 tests)
+- Singleton pattern verification
+- API key storage, retrieval, and signals
+- Theme persistence and signal emission  
+- Notifications settings and signals
+- Font size validation (clamped to 9-24) and signals
+- Full settings persistence verification
