@@ -3,6 +3,7 @@
 #include <QSettings>
 #include <QApplication>
 #include <QDebug>
+#include <QSysInfo>
 
 #include "data/settings_manager.h"
 
@@ -53,6 +54,12 @@ TEST_F(SettingsManagerTest, ApiKeyNotStoredPlaintext) {
 }
 
 TEST_F(SettingsManagerTest, ApiKeyRoundTrip) {
+    // Skip if machine ID is not available (common in CI containers)
+    QByteArray machineId = QSysInfo::machineUniqueId();
+    if (machineId.isEmpty()) {
+        GTEST_SKIP() << "Machine ID not available (common in CI containers)";
+    }
+    
     SettingsManager& mgr = SettingsManager::instance();
     QString original = "sk-jules-api-key-12345";
 
