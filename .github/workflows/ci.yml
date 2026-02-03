@@ -7,24 +7,13 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  test:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            distro: ubuntu
-          - os: ubuntu-latest
-            distro: fedora
-          - os: ubuntu-latest
-            distro: arch
-
-    runs-on: ${{ matrix.os }}
-
+  # Ubuntu job runs natively on ubuntu-22.04
+  test-ubuntu:
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies (Ubuntu 22.04)
-        if: matrix.distro == 'ubuntu'
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -40,10 +29,28 @@ jobs:
             libxcb-keysyms1-dev \
             xvfb
 
-      - name: Install dependencies (Fedora)
-        if: matrix.distro == 'fedora'
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run tests
         run: |
-          sudo dnf install -y \
+          cd build
+          xvfb-run --auto-servernum ctest --output-on-failure
+
+  # Fedora job runs in Docker container
+  test-fedora:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:39
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          dnf install -y \
             git \
             cmake \
             gcc-c++ \
@@ -54,14 +61,36 @@ jobs:
             freetype-devel \
             libxcb-devel \
             xcb-util-keysyms-devel \
-            xorg-x11-server-Xvfb
+            xorg-x11-server-Xvfb \
+            mesa-dri-drivers
 
-      - name: Install dependencies (Arch)
-        if: matrix.distro == 'arch'
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run tests
         run: |
-          sudo pacman -Syu --noconfirm
-          sudo pacman -S --noconfirm \
-            git \
+          cd build
+          xvfb-run --auto-servernum ctest --output-on-failure
+
+  # Arch job runs in Docker container
+  test-arch:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Update system and install git
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm git
+
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          pacman -S --noconfirm \
             cmake \
             base-devel \
             qt6-base \
