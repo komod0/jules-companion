@@ -351,7 +351,12 @@ void JulesApiClient::handleError(QNetworkReply* reply, const PendingRequest& req
         retryRequest.retryCount++;
         scheduleRetry(retryRequest);
     } else {
-        emit errorOccurred(error);
+        // Emit specific signal for activities errors (non-critical, doesn't show red banner)
+        if (request.type == RequestType::GetActivities) {
+            emit activitiesError(request.sessionId, error);
+        } else {
+            emit errorOccurred(error);
+        }
     }
 }
 

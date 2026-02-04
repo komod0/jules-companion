@@ -377,18 +377,23 @@ void SessionDetailWidget::populateActivities() {
             // Create a custom widget for the activity item (message bubble style)
             auto* itemWidget = new QWidget();
             auto* itemLayout = new QHBoxLayout(itemWidget);
-            itemLayout->setContentsMargins(0, 4, 0, 4);
+            itemLayout->setContentsMargins(0, 10, 0, 10);  // Match macOS ~20pt spacing
             
             bool isUser = (activity.originator == "USER");
             
             auto* bubble = new QLabel(text);
             bubble->setWordWrap(true);
             bubble->setTextInteractionFlags(Qt::TextSelectableByMouse);
+            bubble->setMaximumWidth(450);  // Limit bubble width like macOS (minLength: 50 spacer)
             
+            // User messages: accent background, white text
+            // Agent messages: secondary background, primary text
             QColor bubbleBg = isUser 
-                ? AppColors::accent(isDark).lighter(isDark ? 80 : 150)
+                ? AppColors::accent(isDark)
                 : AppColors::backgroundSecondary(isDark);
-            QColor bubbleText = AppColors::textPrimary(isDark);
+            QColor bubbleText = isUser 
+                ? QColor(255, 255, 255)  // White for user bubbles
+                : AppColors::textPrimary(isDark);
             
             bubble->setStyleSheet(QString(
                 "background-color: %1; color: %2; "
@@ -397,11 +402,13 @@ void SessionDetailWidget::populateActivities() {
                 .arg(bubbleText.name()));
             
             if (isUser) {
+                itemLayout->addSpacing(50);  // Match macOS minLength: 50
                 itemLayout->addStretch();
                 itemLayout->addWidget(bubble);
             } else {
                 itemLayout->addWidget(bubble);
                 itemLayout->addStretch();
+                itemLayout->addSpacing(50);  // Match macOS minLength: 50
             }
             
             item->setSizeHint(itemWidget->sizeHint());

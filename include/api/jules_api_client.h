@@ -299,6 +299,7 @@ signals:
     void sessionReceived(const Session& session);
     void activitiesReceived(const QString& sessionId, 
                             const QList<Activity>& activities);
+    void activitiesError(const QString& sessionId, const ApiError& error);
     void sessionCreated(const Session& session);
     void messageSent(const QString& sessionId, bool success);
     void errorOccurred(const ApiError& error);
