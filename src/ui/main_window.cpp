@@ -69,7 +69,7 @@ QPalette createLightPalette() {
     QColor dimText(110, 110, 115);      // #6E6E73 - textSecondary
     QColor accent(123, 97, 255);        // #7B61FF - purple accent (light mode)
     QColor highlight(123, 97, 255);     // Same purple for selection
-    
+
     palette.setColor(QPalette::Window, lightBg);
     palette.setColor(QPalette::WindowText, darkText);
     palette.setColor(QPalette::Base, white);
@@ -99,10 +99,15 @@ MainWindow::MainWindow(QWidget* parent)
     , m_splitter(nullptr)
     , m_sidebar(nullptr)
     , m_content(nullptr)
+    , m_sidebarLayout(nullptr)
+    , m_contentLayout(nullptr)
     , m_toolbar(nullptr)
+    , m_menuBar(nullptr)
     , m_flashMessage(nullptr)
     , m_theme(Theme::System)
     , m_effectiveTheme(Theme::Light)
+    , m_sidebarPlaceholder(nullptr)
+    , m_contentPlaceholder(nullptr)
 {
     setupUi();
     updateEffectiveTheme();
@@ -128,9 +133,28 @@ void MainWindow::setupUi() {
     setMinimumSize(MIN_WIDTH, MIN_HEIGHT);
     resize(DEFAULT_WIDTH, DEFAULT_HEIGHT);
     
+    setupMenuBar();
     setupToolbar();
     setupSplitter();
     setupStatusBar();
+}
+
+void MainWindow::setupMenuBar() {
+    m_menuBar = menuBar();
+    
+    QMenu* fileMenu = m_menuBar->addMenu(tr("&File"));
+    
+    QAction* settingsAction = fileMenu->addAction(tr("&Settings..."));
+    settingsAction->setShortcut(QKeySequence::Preferences);
+    settingsAction->setMenuRole(QAction::PreferencesRole);
+    connect(settingsAction, &QAction::triggered, this, &MainWindow::settingsRequested);
+    
+    fileMenu->addSeparator();
+    
+    QAction* quitAction = fileMenu->addAction(tr("&Quit"));
+    quitAction->setShortcut(QKeySequence::Quit);
+    quitAction->setMenuRole(QAction::QuitRole);
+    connect(quitAction, &QAction::triggered, this, &MainWindow::quitRequested);
 }
 
 void MainWindow::setupToolbar() {
@@ -172,53 +196,57 @@ void MainWindow::setupSplitter() {
     m_splitter->setChildrenCollapsible(false);
     m_splitter->setHandleWidth(1);
     
+    // Sidebar container
     m_sidebar = new QWidget(this);
     m_sidebar->setMinimumWidth(180);
     m_sidebar->setMaximumWidth(400);
     
-    QVBoxLayout* sidebarLayout = new QVBoxLayout(m_sidebar);
-    sidebarLayout->setContentsMargins(0, 0, 0, 0);
-    sidebarLayout->setSpacing(0);
+    m_sidebarLayout = new QVBoxLayout(m_sidebar);
+    m_sidebarLayout->setContentsMargins(0, 0, 0, 0);
+    m_sidebarLayout->setSpacing(0);
     
-    QFrame* sidebarHeader = new QFrame(m_sidebar);
-    sidebarHeader->setFrameShape(QFrame::NoFrame);
-    QVBoxLayout* headerLayout = new QVBoxLayout(sidebarHeader);
-    headerLayout->setContentsMargins(16, 16, 16, 16);
-    QLabel* sessionsLabel = new QLabel("Sessions", sidebarHeader);
+    // Create placeholder for sidebar
+    m_sidebarPlaceholder = new QWidget(m_sidebar);
+    QVBoxLayout* placeholderLayout = new QVBoxLayout(m_sidebarPlaceholder);
+    placeholderLayout->setContentsMargins(16, 16, 16, 16);
+    QLabel* sessionsLabel = new QLabel("Sessions", m_sidebarPlaceholder);
     sessionsLabel->setStyleSheet("font-weight: bold; font-size: 14px;");
-    headerLayout->addWidget(sessionsLabel);
+    placeholderLayout->addWidget(sessionsLabel);
+    placeholderLayout->addStretch();
     
-    sidebarLayout->addWidget(sidebarHeader);
-    sidebarLayout->addStretch();
+    m_sidebarLayout->addWidget(m_sidebarPlaceholder);
     
+    // Only apply border to the sidebar container itself, not children
+    m_sidebar->setObjectName("sidebarContainer");
     m_sidebar->setStyleSheet(R"(
-        QWidget {
+        #sidebarContainer {
             border-right: 1px solid palette(mid);
         }
     )");
     
+    // Content container
     m_content = new QWidget(this);
     m_content->setMinimumWidth(300);
     
-    QVBoxLayout* contentLayout = new QVBoxLayout(m_content);
-    contentLayout->setContentsMargins(0, 0, 0, 0);
-    contentLayout->setSpacing(0);
+    m_contentLayout = new QVBoxLayout(m_content);
+    m_contentLayout->setContentsMargins(0, 0, 0, 0);
+    m_contentLayout->setSpacing(0);
     
-    QFrame* contentHeader = new QFrame(m_content);
-    contentHeader->setFrameShape(QFrame::NoFrame);
-    QVBoxLayout* contentHeaderLayout = new QVBoxLayout(contentHeader);
-    contentHeaderLayout->setContentsMargins(24, 24, 24, 24);
+    // Create placeholder for content
+    m_contentPlaceholder = new QWidget(m_content);
+    QVBoxLayout* contentPlaceholderLayout = new QVBoxLayout(m_contentPlaceholder);
+    contentPlaceholderLayout->setContentsMargins(24, 24, 24, 24);
     
-    QLabel* welcomeLabel = new QLabel("Welcome to Jules", contentHeader);
+    QLabel* welcomeLabel = new QLabel("Welcome to Jules", m_contentPlaceholder);
     welcomeLabel->setStyleSheet("font-size: 24px; font-weight: bold;");
-    contentHeaderLayout->addWidget(welcomeLabel);
+    contentPlaceholderLayout->addWidget(welcomeLabel);
     
-    QLabel* subtitleLabel = new QLabel("Select a session from the sidebar or create a new one", contentHeader);
+    QLabel* subtitleLabel = new QLabel("Select a session from the sidebar or create a new one", m_contentPlaceholder);
     subtitleLabel->setStyleSheet("color: palette(placeholderText); font-size: 14px;");
-    contentHeaderLayout->addWidget(subtitleLabel);
+    contentPlaceholderLayout->addWidget(subtitleLabel);
+    contentPlaceholderLayout->addStretch();
     
-    contentLayout->addWidget(contentHeader);
-    contentLayout->addStretch();
+    m_contentLayout->addWidget(m_contentPlaceholder);
     
     m_splitter->addWidget(m_sidebar);
     m_splitter->addWidget(m_content);
@@ -226,6 +254,52 @@ void MainWindow::setupSplitter() {
     m_splitter->setSizes(QList<int>() << DEFAULT_SIDEBAR_WIDTH << (DEFAULT_WIDTH - DEFAULT_SIDEBAR_WIDTH));
     
     setCentralWidget(m_splitter);
+}
+
+void MainWindow::setSidebarContent(QWidget* widget) {
+    if (!widget || !m_sidebarLayout) return;
+    
+    // Remove placeholder if it exists
+    if (m_sidebarPlaceholder) {
+        m_sidebarLayout->removeWidget(m_sidebarPlaceholder);
+        m_sidebarPlaceholder->deleteLater();
+        m_sidebarPlaceholder = nullptr;
+    }
+    
+    // Clear existing content
+    while (m_sidebarLayout->count() > 0) {
+        QLayoutItem* item = m_sidebarLayout->takeAt(0);
+        if (item->widget() && item->widget() != widget) {
+            item->widget()->deleteLater();
+        }
+        delete item;
+    }
+    
+    widget->setParent(m_sidebar);
+    m_sidebarLayout->addWidget(widget);
+}
+
+void MainWindow::setMainContent(QWidget* widget) {
+    if (!widget || !m_contentLayout) return;
+    
+    // Remove placeholder if it exists
+    if (m_contentPlaceholder) {
+        m_contentLayout->removeWidget(m_contentPlaceholder);
+        m_contentPlaceholder->deleteLater();
+        m_contentPlaceholder = nullptr;
+    }
+    
+    // Clear existing content
+    while (m_contentLayout->count() > 0) {
+        QLayoutItem* item = m_contentLayout->takeAt(0);
+        if (item->widget() && item->widget() != widget) {
+            item->widget()->deleteLater();
+        }
+        delete item;
+    }
+    
+    widget->setParent(m_content);
+    m_contentLayout->addWidget(widget);
 }
 
 QWidget* MainWindow::sidebarWidget() const {

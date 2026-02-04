@@ -1,8 +1,13 @@
 #include "ui/session_list_widget.h"
+#include "ui/app_colors.h"
 
 #include <QFrame>
 #include <QFont>
 #include <QIcon>
+#include <QStyledItemDelegate>
+#include <QPainter>
+#include <QApplication>
+#include <QStyleOptionViewItem>
 
 namespace jules {
 
@@ -34,6 +39,93 @@ const QMap<SessionState, QString> STATE_TEXTS = {
 };
 }
 
+/**
+ * SessionItemDelegate - Custom delegate for macOS-style session list rows
+ * 
+ * Features:
+ * - Purple unviewed indicator dot
+ * - Hover and selection states with proper colors
+ * - Single-line truncated title
+ * - Matching spacing and corner radius
+ */
+class SessionItemDelegate : public QStyledItemDelegate {
+public:
+    explicit SessionItemDelegate(QObject* parent = nullptr) 
+        : QStyledItemDelegate(parent) {}
+    
+    void paint(QPainter* painter, const QStyleOptionViewItem& option, 
+               const QModelIndex& index) const override {
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        
+        // Determine theme from palette
+        bool isDark = option.palette.window().color().lightness() < 128;
+        
+        QRect rect = option.rect.adjusted(4, 2, -4, -2);
+        
+        // Get item data
+        bool isViewed = index.data(Qt::UserRole + 3).toBool();
+        bool isSelected = option.state & QStyle::State_Selected;
+        bool isHovered = option.state & QStyle::State_MouseOver;
+        
+        // Draw background with rounded corners (6pt radius matching macOS)
+        QColor bgColor = Qt::transparent;
+        if (isSelected) {
+            bgColor = AppColors::selectionBackground(isDark);
+        } else if (isHovered) {
+            bgColor = AppColors::hoverBackground(isDark);
+        }
+        
+        if (bgColor != Qt::transparent) {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(bgColor);
+            painter->drawRoundedRect(rect, 6, 6);
+        }
+        
+        // Calculate content rect
+        QRect contentRect = rect.adjusted(8, 0, -8, 0);
+        
+        // Draw unviewed indicator (4x4 purple circle)
+        if (!isViewed) {
+            QColor dotColor = AppColors::unviewedIndicator(isDark);
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(dotColor);
+            int dotY = contentRect.center().y() - 2;
+            painter->drawEllipse(contentRect.left(), dotY, 4, 4);
+            contentRect.setLeft(contentRect.left() + 12);
+        } else {
+            contentRect.setLeft(contentRect.left() + 8);
+        }
+        
+        // Draw title text
+        QString title = index.data(Qt::DisplayRole).toString();
+        QColor textColor = AppColors::textPrimary(isDark);
+        
+        painter->setPen(textColor);
+        QFont font = option.font;
+        font.setPointSize(13);
+        font.setWeight(QFont::Medium);
+        painter->setFont(font);
+        
+        // Single line, truncate with ellipsis
+        QFontMetrics fm(font);
+        QString elidedTitle = fm.elidedText(title, Qt::ElideRight, contentRect.width());
+        
+        QRect textRect = contentRect;
+        textRect.setHeight(contentRect.height());
+        painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, elidedTitle);
+        
+        painter->restore();
+    }
+    
+    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override {
+        Q_UNUSED(option);
+        Q_UNUSED(index);
+        // Row height: 8pt vertical padding * 2 + text height ≈ 36px
+        return QSize(200, 36);
+    }
+};
+
 SessionListWidget::SessionListWidget(SessionRepository* repository, QWidget* parent)
     : QWidget(parent)
     , m_repository(repository)
@@ -62,29 +154,66 @@ void SessionListWidget::setupUi() {
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     
+    // Header with Sessions title and + button
     auto* header = new QFrame(this);
     auto* headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(12, 8, 12, 8);
+    headerLayout->setContentsMargins(16, 12, 16, 12);
     
     auto* titleLabel = new QLabel("Sessions", header);
     QFont titleFont = titleLabel->font();
     titleFont.setBold(true);
-    titleFont.setPointSize(titleFont.pointSize() + 1);
+    titleFont.setPointSize(14);
     titleLabel->setFont(titleFont);
     
     m_newButton = new QPushButton("+", header);
-    m_newButton->setFixedSize(24, 24);
+    m_newButton->setFixedSize(28, 28);
     m_newButton->setToolTip("Create new session");
+    m_newButton->setStyleSheet(R"(
+        QPushButton {
+            background-color: transparent;
+            border: none;
+            border-radius: 6px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        QPushButton:hover {
+            background-color: rgba(128, 128, 128, 0.2);
+        }
+        QPushButton:pressed {
+            background-color: rgba(128, 128, 128, 0.3);
+        }
+    )");
     connect(m_newButton, &QPushButton::clicked, this, &SessionListWidget::requestCreateNew);
     
     headerLayout->addWidget(titleLabel);
     headerLayout->addStretch();
     headerLayout->addWidget(m_newButton);
     
+    // Session list with custom delegate
     m_listWidget = new QListWidget(this);
     m_listWidget->setFrameShape(QFrame::NoFrame);
-    m_listWidget->setSpacing(2);
+    m_listWidget->setSpacing(0);
     m_listWidget->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_listWidget->setMouseTracking(true);  // Enable hover states
+    m_listWidget->setItemDelegate(new SessionItemDelegate(m_listWidget));
+    m_listWidget->setStyleSheet(R"(
+        QListWidget {
+            background-color: transparent;
+            border: none;
+            outline: none;
+        }
+        QListWidget::item {
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+        }
+        QListWidget::item:selected {
+            background-color: transparent;
+        }
+        QListWidget::item:hover {
+            background-color: transparent;
+        }
+    )");
     connect(m_listWidget, &QListWidget::itemClicked, 
             this, &SessionListWidget::onItemClicked);
     
@@ -168,7 +297,8 @@ void SessionListWidget::populateList() {
 }
 
 void SessionListWidget::updateSessionItem(QListWidgetItem* item, const Session& session) {
-    QString displayText = session.prompt;
+    // Use title if available, otherwise use truncated prompt
+    QString displayText = session.title.value_or(session.prompt);
     if (displayText.length() > 50) {
         displayText = displayText.left(47) + "...";
     }
@@ -177,18 +307,11 @@ void SessionListWidget::updateSessionItem(QListWidgetItem* item, const Session& 
     item->setData(Qt::UserRole, session.id);
     item->setData(Qt::UserRole + 1, STATE_ICONS.value(session.state, ":/icons/unknown.svg"));
     item->setData(Qt::UserRole + 2, stateToText(session.state));
-    item->setIcon(stateToIcon(session.state));
+    item->setData(Qt::UserRole + 3, session.isViewed());  // For custom delegate
     item->setToolTip(QString("%1\n\nState: %2\nCreated: %3")
                          .arg(session.prompt)
                          .arg(stateToText(session.state))
                          .arg(session.createTime.value_or("Unknown")));
-    
-    QColor stateColor = stateToColor(session.state);
-    QFont font = item->font();
-    if (session.isActive()) {
-        font.setBold(true);
-    }
-    item->setFont(font);
 }
 
 void SessionListWidget::selectSession(int index) {
@@ -297,25 +420,9 @@ QString SessionListWidget::stateToText(SessionState state) const {
 }
 
 QColor SessionListWidget::stateToColor(SessionState state) const {
-    switch (state) {
-        case SessionState::Queued:
-            return QColor(128, 128, 128);
-        case SessionState::Planning:
-        case SessionState::InProgress:
-            return QColor(66, 133, 244);
-        case SessionState::Completed:
-        case SessionState::CompletedUnknown:
-            return QColor(52, 168, 83);
-        case SessionState::Failed:
-            return QColor(234, 67, 53);
-        case SessionState::Paused:
-            return QColor(251, 188, 4);
-        case SessionState::AwaitingUserFeedback:
-        case SessionState::AwaitingPlanApproval:
-            return QColor(255, 152, 0);
-        default:
-            return QColor(128, 128, 128);
-    }
+    // Use AppColors for consistency
+    bool isDark = palette().window().color().lightness() < 128;
+    return AppColors::stateColor(static_cast<int>(state), isDark);
 }
 
 }

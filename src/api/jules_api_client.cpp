@@ -109,10 +109,16 @@ void JulesApiClient::setMaxRetries(int maxRetries) {
 
 QNetworkRequest JulesApiClient::createRequest(const QString& endpoint) const {
     QUrl url(BASE_URL + endpoint);
-    QNetworkRequest request(url);
     
+    // Add API key as query parameter (matching macOS implementation)
+    if (!m_apiKey.isEmpty()) {
+        QUrlQuery query(url.query());
+        query.addQueryItem("key", m_apiKey);
+        url.setQuery(query);
+    }
+    
+    QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    request.setRawHeader("x-api-key", m_apiKey.toUtf8());
     
     return request;
 }
@@ -149,19 +155,21 @@ void JulesApiClient::makePostRequest(const QString& endpoint, const QJsonObject&
 
 void JulesApiClient::getSessions(int pageSize, const QString& pageToken) {
     QString endpoint = QStringLiteral("/sessions");
+    
+    QUrl url(BASE_URL + endpoint);
     QUrlQuery query;
     query.addQueryItem("pageSize", QString::number(pageSize));
     if (!pageToken.isEmpty()) {
         query.addQueryItem("pageToken", pageToken);
     }
-    
-    QUrl url(BASE_URL + endpoint);
+    // Add API key as query parameter (matching macOS implementation)
+    if (!m_apiKey.isEmpty()) {
+        query.addQueryItem("key", m_apiKey);
+    }
     url.setQuery(query);
     
-    QNetworkRequest request;
-    request.setUrl(url);
+    QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    request.setRawHeader("x-api-key", m_apiKey.toUtf8());
     
     QNetworkReply* reply = m_networkManager->get(request);
     

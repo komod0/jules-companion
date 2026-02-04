@@ -196,6 +196,9 @@ struct Session {
     std::optional<QList<Activity>> activities;
     std::optional<QDateTime> lastActivityPollTime;
     
+    // Client-side only property to track when the session was viewed after completion
+    std::optional<QDateTime> viewedPostCompletionAt;
+    
     bool isActive() const {
         return state == SessionState::Queued ||
                state == SessionState::Planning ||
@@ -209,6 +212,25 @@ struct Session {
                state == SessionState::CompletedUnknown ||
                state == SessionState::Failed ||
                state == SessionState::Paused;
+    }
+    
+    /// Returns true if this session has been viewed after completion or is over a day old
+    bool isViewed() const {
+        // Explicitly viewed post-completion
+        if (viewedPostCompletionAt.has_value()) return true;
+        // Treat sessions over a day old as viewed (don't show unviewed indicator)
+        if (updateTime.has_value()) {
+            QDateTime updateDateTime = QDateTime::fromString(updateTime.value(), Qt::ISODate);
+            if (updateDateTime.isValid() && updateDateTime.secsTo(QDateTime::currentDateTime()) > 86400) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    /// Returns true if this session is completed (or completedUnknown) but has not been viewed yet
+    bool isUnviewedCompleted() const {
+        return (state == SessionState::Completed || state == SessionState::CompletedUnknown) && !isViewed();
     }
 };
 

@@ -5,6 +5,10 @@
 #include <QToolBar>
 #include <QStatusBar>
 #include <QSettings>
+#include <QMenuBar>
+#include <QMenu>
+#include <QAction>
+#include <QVBoxLayout>
 #include "data/settings_manager.h"
 
 namespace jules {
@@ -24,6 +28,10 @@ public:
     QWidget* sidebarWidget() const;
     QWidget* contentWidget() const;
     QToolBar* mainToolbar() const;
+    
+    // Set content for sidebar and main content area
+    void setSidebarContent(QWidget* widget);
+    void setMainContent(QWidget* widget);
 
     Theme currentTheme() const;
     Theme effectiveTheme() const;
@@ -39,9 +47,12 @@ public:
 
 signals:
     void themeChanged(Theme theme);
+    void settingsRequested();
+    void quitRequested();
 
 private:
     void setupUi();
+    void setupMenuBar();
     void setupToolbar();
     void setupStatusBar();
     void setupSplitter();
@@ -52,10 +63,17 @@ private:
     QSplitter* m_splitter;
     QWidget* m_sidebar;
     QWidget* m_content;
+    QVBoxLayout* m_sidebarLayout;
+    QVBoxLayout* m_contentLayout;
     QToolBar* m_toolbar;
+    QMenuBar* m_menuBar;
     FlashMessageWidget* m_flashMessage = nullptr;
     Theme m_theme = Theme::System;
     Theme m_effectiveTheme = Theme::Light;
+    
+    // Placeholders to remove when real content is set
+    QWidget* m_sidebarPlaceholder = nullptr;
+    QWidget* m_contentPlaceholder = nullptr;
 };
 
 }
