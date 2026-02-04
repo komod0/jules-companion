@@ -11,17 +11,7 @@
 
 namespace jules {
 
-struct CachedDiff {
-    QString patch;
-    std::optional<QString> language;
-    std::optional<QString> filename;
-    
-    bool operator==(const CachedDiff& other) const {
-        return patch == other.patch && 
-               language == other.language && 
-               filename == other.filename;
-    }
-};
+// CachedDiff is now defined in api/jules_api_client.h
 
 class SessionRepository : public QObject {
     Q_OBJECT

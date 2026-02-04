@@ -179,6 +179,19 @@ struct Activity {
     std::optional<QString> generatedTitle;
 };
 
+// Cached diff data for storage
+struct CachedDiff {
+    QString patch;
+    std::optional<QString> language;
+    std::optional<QString> filename;
+    
+    bool operator==(const CachedDiff& other) const {
+        return patch == other.patch && 
+               language == other.language && 
+               filename == other.filename;
+    }
+};
+
 struct Session {
     QString name;
     QString id;
@@ -198,6 +211,21 @@ struct Session {
     
     // Client-side only property to track when the session was viewed after completion
     std::optional<QDateTime> viewedPostCompletionAt;
+    
+    // Client-side tracking of local merge timestamp
+    std::optional<QDateTime> mergedLocallyAt;
+    
+    // Cached git statistics summary (e.g., "+50/-30 lines")
+    std::optional<QString> cachedGitStatsSummary;
+    
+    // Cached diff data for display
+    std::optional<QList<CachedDiff>> cachedLatestDiffs;
+    
+    // Timestamp for cache staleness checking
+    std::optional<QString> cachedGitStatsUpdateTime;
+    
+    // Flag indicating if diffs are cached (fast lookup)
+    bool hasCachedDiffsFlag = false;
     
     bool isActive() const {
         return state == SessionState::Queued ||
@@ -231,6 +259,43 @@ struct Session {
     /// Returns true if this session is completed (or completedUnknown) but has not been viewed yet
     bool isUnviewedCompleted() const {
         return (state == SessionState::Completed || state == SessionState::CompletedUnknown) && !isViewed();
+    }
+    
+    /// Returns true if this session was merged locally
+    bool isMergedLocally() const {
+        return mergedLocallyAt.has_value();
+    }
+    
+    /// Returns cached git stats summary or empty string
+    QString gitStatsSummary() const {
+        return cachedGitStatsSummary.value_or(QString());
+    }
+    
+    /// Returns true if diffs are available (from flag or cached data)
+    bool hasDiffsAvailable() const {
+        return hasCachedDiffsFlag || 
+               (cachedLatestDiffs.has_value() && !cachedLatestDiffs->isEmpty());
+    }
+    
+    /// Returns seconds since last update, or -1 if unknown
+    qint64 timeSinceLastUpdate() const {
+        if (!updateTime.has_value()) return -1;
+        QDateTime updateDateTime = QDateTime::fromString(updateTime.value(), Qt::ISODate);
+        if (!updateDateTime.isValid()) return -1;
+        return updateDateTime.secsTo(QDateTime::currentDateTime());
+    }
+    
+    /// Returns true if this is an active session that hasn't been updated in a while (stale)
+    bool isStaleActive() const {
+        if (!isActive()) return false;
+        qint64 elapsed = timeSinceLastUpdate();
+        // Consider stale if no update for 10 minutes
+        return elapsed > 0 && elapsed > 600;
+    }
+    
+    /// Returns true if we have any cached git stats
+    bool hasCachedGitStats() const {
+        return cachedGitStatsSummary.has_value() && !cachedGitStatsSummary->isEmpty();
     }
 };
 
