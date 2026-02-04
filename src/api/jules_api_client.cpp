@@ -3,6 +3,7 @@
 #include <QJsonDocument>
 #include <QTimer>
 #include <QNetworkRequest>
+#include <QCryptographicHash>
 #include <QDebug>
 
 namespace jules {
@@ -191,6 +192,33 @@ void JulesApiClient::getActivities(const QString& sessionId) {
     makeGetRequest(endpoint, RequestType::GetActivities, sessionId);
 }
 
+void JulesApiClient::getSources(const QString& pageToken) {
+    QString endpoint = QStringLiteral("/sources");
+    
+    QUrl url(BASE_URL + endpoint);
+    QUrlQuery query;
+    if (!pageToken.isEmpty()) {
+        query.addQueryItem("pageToken", pageToken);
+    }
+    // Add API key as query parameter
+    if (!m_apiKey.isEmpty()) {
+        query.addQueryItem("key", m_apiKey);
+    }
+    url.setQuery(query);
+    
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    
+    QNetworkReply* reply = m_networkManager->get(request);
+    
+    PendingRequest pending;
+    pending.type = RequestType::GetSources;
+    pending.retryCount = 0;
+    m_pendingRequests[reply] = pending;
+    
+    m_rateLimiter.recordRequest();
+}
+
 void JulesApiClient::createSession(const Source& source, const QString& branchName, 
                                     const QString& prompt) {
     QJsonObject body;
@@ -316,12 +344,36 @@ void JulesApiClient::handleResponse(QNetworkReply* reply, const PendingRequest& 
         }
         
         case RequestType::GetActivities: {
+            // Compute hash for caching (skip full parse if unchanged)
+            QByteArray newHash = QCryptographicHash::hash(responseData, QCryptographicHash::Md5);
+            
+            if (m_activityResponseHashes.contains(request.sessionId) &&
+                m_activityResponseHashes[request.sessionId] == newHash) {
+                // Response unchanged, skip parsing
+                emit activitiesUnchanged(request.sessionId);
+                break;
+            }
+            
+            // Cache the new hash
+            m_activityResponseHashes[request.sessionId] = newHash;
+            
             QList<Activity> activities;
             QJsonArray activitiesArray = json["activities"].toArray();
             for (const QJsonValue& val : activitiesArray) {
                 activities.append(parseActivity(val.toObject()));
             }
             emit activitiesReceived(request.sessionId, activities);
+            break;
+        }
+        
+        case RequestType::GetSources: {
+            QList<Source> sources;
+            QJsonArray sourcesArray = json["sources"].toArray();
+            for (const QJsonValue& val : sourcesArray) {
+                sources.append(parseSource(val.toObject()));
+            }
+            QString nextPageToken = json["nextPageToken"].toString();
+            emit sourcesReceived(sources, nextPageToken);
             break;
         }
         
@@ -390,6 +442,10 @@ void JulesApiClient::scheduleRetry(const PendingRequest& request) {
                 endpoint = QStringLiteral("/sessions/") + request.sessionId + ":sendMessage";
                 reply = m_networkManager->post(createRequest(endpoint),
                     QJsonDocument(request.requestBody).toJson());
+                break;
+            case RequestType::GetSources:
+                endpoint = QStringLiteral("/sources");
+                reply = m_networkManager->get(createRequest(endpoint));
                 break;
         }
         
@@ -694,6 +750,51 @@ Activity JulesApiClient::parseActivity(const QJsonObject& json) const {
     return activity;
 }
 
+Source JulesApiClient::parseSource(const QJsonObject& json) const {
+    Source source;
+    source.name = json["name"].toString();
+    
+    // ID can be explicitly provided or extracted from name
+    if (json.contains("id") && !json["id"].isNull()) {
+        source.id = json["id"].toString();
+    } else {
+        // Extract ID from name (e.g., "sources/github/owner/repo" -> "owner/repo")
+        source.id = source.displayName();
+    }
+    
+    if (json.contains("githubRepo") && json["githubRepo"].isObject()) {
+        QJsonObject grJson = json["githubRepo"].toObject();
+        GitHubRepo repo;
+        repo.owner = grJson["owner"].toString();
+        repo.repo = grJson["repo"].toString();
+        
+        if (grJson.contains("isPrivate") && !grJson["isPrivate"].isNull()) {
+            repo.isPrivate = grJson["isPrivate"].toBool();
+        }
+        
+        if (grJson.contains("defaultBranch") && grJson["defaultBranch"].isObject()) {
+            QJsonObject dbJson = grJson["defaultBranch"].toObject();
+            GitHubBranch defaultBranch;
+            defaultBranch.displayName = dbJson["displayName"].toString();
+            repo.defaultBranch = defaultBranch;
+        }
+        
+        if (grJson.contains("branches") && grJson["branches"].isArray()) {
+            QJsonArray branchesArray = grJson["branches"].toArray();
+            for (const QJsonValue& val : branchesArray) {
+                QJsonObject branchJson = val.toObject();
+                GitHubBranch branch;
+                branch.displayName = branchJson["displayName"].toString();
+                repo.branches.append(branch);
+            }
+        }
+        
+        source.githubRepo = repo;
+    }
+    
+    return source;
+}
+
 SessionState JulesApiClient::parseSessionState(const QString& stateStr) const {
     static const QMap<QString, SessionState> stateMap = {
         {"STATE_UNSPECIFIED", SessionState::Unspecified},
@@ -709,6 +810,272 @@ SessionState JulesApiClient::parseSessionState(const QString& stateStr) const {
     };
     
     return stateMap.value(stateStr, SessionState::Unspecified);
+}
+
+// ============================================================================
+// Session Static Methods for Git Stats Computation
+// ============================================================================
+
+QString Session::computeGitStatsSummary(const QList<Activity>& activities) {
+    if (activities.isEmpty()) return QString();
+    
+    // Find the last activity that has a git patch (list is oldest to newest)
+    const Activity* latestWithPatch = nullptr;
+    for (auto it = activities.rbegin(); it != activities.rend(); ++it) {
+        if (it->artifacts.has_value()) {
+            for (const auto& artifact : it->artifacts.value()) {
+                if (artifact.changeSet.has_value() && 
+                    artifact.changeSet->gitPatch.has_value() &&
+                    artifact.changeSet->gitPatch->unidiffPatch.has_value()) {
+                    latestWithPatch = &(*it);
+                    break;
+                }
+            }
+        }
+        if (latestWithPatch) break;
+    }
+    
+    if (!latestWithPatch || !latestWithPatch->artifacts.has_value()) {
+        return QString();
+    }
+    
+    int totalAdded = 0;
+    int totalRemoved = 0;
+    
+    for (const auto& artifact : latestWithPatch->artifacts.value()) {
+        if (!artifact.changeSet.has_value() || 
+            !artifact.changeSet->gitPatch.has_value() ||
+            !artifact.changeSet->gitPatch->unidiffPatch.has_value()) {
+            continue;
+        }
+        
+        const QString& patch = artifact.changeSet->gitPatch->unidiffPatch.value();
+        QStringList lines = patch.split('\n');
+        
+        for (const QString& line : lines) {
+            if (line.startsWith('+') && !line.startsWith("+++")) {
+                totalAdded++;
+            } else if (line.startsWith('-') && !line.startsWith("---")) {
+                totalRemoved++;
+            }
+        }
+    }
+    
+    if (totalAdded == 0 && totalRemoved == 0) {
+        return QString();
+    }
+    
+    return QString("+%1 -%2").arg(totalAdded).arg(totalRemoved);
+}
+
+QList<CachedDiff> Session::computeLatestDiffs(const QList<Activity>& activities) {
+    if (activities.isEmpty()) return QList<CachedDiff>();
+    
+    // Find the last activity that has a git patch
+    const Activity* latestWithPatch = nullptr;
+    for (auto it = activities.rbegin(); it != activities.rend(); ++it) {
+        if (it->artifacts.has_value()) {
+            for (const auto& artifact : it->artifacts.value()) {
+                if (artifact.changeSet.has_value() && 
+                    artifact.changeSet->gitPatch.has_value() &&
+                    artifact.changeSet->gitPatch->unidiffPatch.has_value()) {
+                    latestWithPatch = &(*it);
+                    break;
+                }
+            }
+        }
+        if (latestWithPatch) break;
+    }
+    
+    if (!latestWithPatch || !latestWithPatch->artifacts.has_value()) {
+        return QList<CachedDiff>();
+    }
+    
+    QList<CachedDiff> allDiffs;
+    
+    for (const auto& artifact : latestWithPatch->artifacts.value()) {
+        if (!artifact.changeSet.has_value() || 
+            !artifact.changeSet->gitPatch.has_value() ||
+            !artifact.changeSet->gitPatch->unidiffPatch.has_value()) {
+            continue;
+        }
+        
+        const QString& patch = artifact.changeSet->gitPatch->unidiffPatch.value();
+        QString source = artifact.changeSet->source.value_or(QString());
+        
+        // Split multi-file patches into individual file patches
+        QList<QPair<QString, QString>> filePatches = splitPatchByFile(patch);
+        
+        for (const auto& filePatch : filePatches) {
+            QString effectiveFilename = filePatch.second.isEmpty() ? source : filePatch.second;
+            QString language = detectLanguageFromPatch(filePatch.first);
+            if (language.isEmpty() && !effectiveFilename.isEmpty()) {
+                language = detectLanguageFromPath(effectiveFilename);
+            }
+            
+            CachedDiff diff;
+            diff.patch = filePatch.first;
+            if (!language.isEmpty()) diff.language = language;
+            if (!effectiveFilename.isEmpty()) diff.filename = effectiveFilename;
+            allDiffs.append(diff);
+        }
+    }
+    
+    return allDiffs;
+}
+
+QList<QPair<QString, QString>> Session::splitPatchByFile(const QString& patch) {
+    QStringList lines = patch.split('\n');
+    QList<QPair<QString, QString>> results;
+    QStringList currentPatchLines;
+    QString currentFilename;
+    
+    for (const QString& line : lines) {
+        if (line.startsWith("diff --git ")) {
+            // Save previous file's patch if exists
+            if (!currentPatchLines.isEmpty()) {
+                results.append(qMakePair(currentPatchLines.join('\n'), currentFilename));
+            }
+            // Start new file
+            currentPatchLines.clear();
+            currentPatchLines.append(line);
+            
+            // Extract filename from "diff --git a/path b/path"
+            QStringList parts = line.split(' ');
+            if (parts.size() >= 4) {
+                QString path = parts[3];
+                if (path.startsWith("b/")) {
+                    path = path.mid(2);
+                }
+                currentFilename = path;
+            } else {
+                currentFilename.clear();
+            }
+        } else {
+            currentPatchLines.append(line);
+        }
+    }
+    
+    // Don't forget the last file
+    if (!currentPatchLines.isEmpty()) {
+        results.append(qMakePair(currentPatchLines.join('\n'), currentFilename));
+    }
+    
+    // If no "diff --git" markers were found, return the original patch as-is
+    if (results.isEmpty() && !patch.isEmpty()) {
+        return { qMakePair(patch, QString()) };
+    }
+    
+    return results;
+}
+
+QString Session::detectLanguageFromPatch(const QString& patch) {
+    QStringList lines = patch.split('\n');
+    
+    for (const QString& line : lines) {
+        if (line.startsWith("+++")) {
+            QString pathString = line.mid(4).trimmed();
+            // Remove "b/" prefix if present (common in git diffs)
+            if (pathString.startsWith("b/")) {
+                pathString = pathString.mid(2);
+            }
+            return detectLanguageFromPath(pathString);
+        }
+    }
+    
+    return QString();
+}
+
+QString Session::detectLanguageFromPath(const QString& path) {
+    // Extract file extension
+    int lastDot = path.lastIndexOf('.');
+    if (lastDot < 0) {
+        // Check for special filenames
+        QString filename = path.section('/', -1);
+        if (filename == "Dockerfile" || filename.startsWith("Dockerfile.")) return "dockerfile";
+        if (filename == "Makefile" || filename == "makefile" || filename == "GNUmakefile") return "make";
+        if (filename == "CMakeLists.txt" || filename.endsWith(".cmake")) return "cmake";
+        if (filename == "Jenkinsfile") return "groovy";
+        if (filename == ".gitignore" || filename == ".gitattributes") return "gitignore";
+        return QString();
+    }
+    
+    QString ext = path.mid(lastDot + 1).toLower();
+    
+    // Map extensions to tree-sitter language IDs
+    static const QMap<QString, QString> extToLang = {
+        // C/C++
+        {"c", "c"}, {"h", "c"},
+        {"cpp", "cpp"}, {"cc", "cpp"}, {"cxx", "cpp"}, {"hpp", "cpp"}, {"hxx", "cpp"},
+        // Web
+        {"js", "javascript"}, {"mjs", "javascript"}, {"cjs", "javascript"},
+        {"jsx", "javascript"},
+        {"ts", "typescript"}, {"mts", "typescript"}, {"cts", "typescript"},
+        {"tsx", "tsx"},
+        {"html", "html"}, {"htm", "html"},
+        {"css", "css"}, {"scss", "scss"}, {"sass", "scss"}, {"less", "css"},
+        {"json", "json"}, {"jsonc", "json"},
+        {"vue", "vue"},
+        {"svelte", "svelte"},
+        // Python
+        {"py", "python"}, {"pyw", "python"}, {"pyi", "python"},
+        // Ruby
+        {"rb", "ruby"}, {"erb", "ruby"}, {"rake", "ruby"}, {"gemspec", "ruby"},
+        // Rust
+        {"rs", "rust"},
+        // Go
+        {"go", "go"},
+        // Java/JVM
+        {"java", "java"},
+        {"kt", "kotlin"}, {"kts", "kotlin"},
+        {"scala", "scala"},
+        {"groovy", "groovy"}, {"gradle", "groovy"},
+        // Swift/Objective-C
+        {"swift", "swift"},
+        {"m", "objc"}, {"mm", "objc"},
+        // Shell
+        {"sh", "bash"}, {"bash", "bash"}, {"zsh", "bash"},
+        {"fish", "fish"},
+        {"ps1", "powershell"}, {"psm1", "powershell"},
+        // Config
+        {"yaml", "yaml"}, {"yml", "yaml"},
+        {"toml", "toml"},
+        {"ini", "ini"}, {"cfg", "ini"},
+        {"xml", "xml"}, {"xsl", "xml"}, {"xslt", "xml"},
+        // Markup
+        {"md", "markdown"}, {"markdown", "markdown"},
+        {"rst", "rst"},
+        {"tex", "latex"}, {"latex", "latex"},
+        // Data
+        {"sql", "sql"},
+        {"graphql", "graphql"}, {"gql", "graphql"},
+        // Other
+        {"php", "php"},
+        {"lua", "lua"},
+        {"r", "r"},
+        {"pl", "perl"}, {"pm", "perl"},
+        {"ex", "elixir"}, {"exs", "elixir"},
+        {"erl", "erlang"}, {"hrl", "erlang"},
+        {"hs", "haskell"}, {"lhs", "haskell"},
+        {"ml", "ocaml"}, {"mli", "ocaml"},
+        {"fs", "fsharp"}, {"fsx", "fsharp"}, {"fsi", "fsharp"},
+        {"cs", "csharp"},
+        {"vb", "vb"},
+        {"clj", "clojure"}, {"cljs", "clojure"}, {"cljc", "clojure"},
+        {"lisp", "commonlisp"}, {"cl", "commonlisp"},
+        {"scm", "scheme"}, {"ss", "scheme"},
+        {"rkt", "racket"},
+        {"nim", "nim"},
+        {"zig", "zig"},
+        {"v", "v"},
+        {"dart", "dart"},
+        {"sol", "solidity"},
+        {"tf", "hcl"}, {"tfvars", "hcl"}, {"hcl", "hcl"},
+        {"proto", "protobuf"},
+        {"dockerfile", "dockerfile"},
+    };
+    
+    return extToLang.value(ext, QString());
 }
 
 } // namespace jules

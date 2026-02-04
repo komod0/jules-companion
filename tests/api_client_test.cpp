@@ -214,7 +214,7 @@ protected:
 // Authentication Tests
 // ============================================================================
 
-TEST_F(JulesApiClientTest, SetsApiKeyHeader) {
+TEST_F(JulesApiClientTest, SetsApiKeyQueryParam) {
     QJsonObject response;
     response["sessions"] = QJsonArray();
     m_mockNetwork->setNextResponse(200, response);
@@ -222,9 +222,10 @@ TEST_F(JulesApiClientTest, SetsApiKeyHeader) {
     m_client->getSessions();
     processEvents();
 
-    // Verify x-api-key header is set
-    QNetworkRequest req = m_mockNetwork->lastRequest();
-    EXPECT_EQ(req.rawHeader("x-api-key"), QByteArray("test-api-key-12345"));
+    // Verify API key is set as query parameter (matching macOS implementation)
+    QUrl url = m_mockNetwork->lastRequest().url();
+    QUrlQuery query(url);
+    EXPECT_EQ(query.queryItemValue("key"), QString("test-api-key-12345"));
 }
 
 TEST_F(JulesApiClientTest, UsesCorrectBaseUrl) {

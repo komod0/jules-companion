@@ -12,12 +12,6 @@
 #   --clean         Clean build and AppDir before starting
 #   --help          Show this help message
 #
-# Requirements:
-#   - cmake, make/ninja
-#   - wget or curl
-#   - qmake6 or qmake (Qt6)
-#   - FUSE (for running AppImages)
-#
 # =============================================================================
 
 set -euo pipefail
@@ -32,11 +26,8 @@ BUILD_DIR="build"
 APPDIR="Jules.AppDir"
 TOOLS_DIR=".appimage-tools"
 
-# linuxdeploy tool URLs
-LINUXDEPLOY_URL="https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
-LINUXDEPLOY_QT_URL="https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
+APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
 
-# Script directory (for relative paths)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
@@ -44,29 +35,17 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # Color-coded Logging
 # =============================================================================
 
-# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $*"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $*"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $*" >&2
-}
-
-log_step() {
-    echo -e "\n${GREEN}==>${NC} ${CYAN}$*${NC}"
-}
+log_info() { echo -e "${BLUE}[INFO]${NC} $*"; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+log_step() { echo -e "\n${GREEN}==>${NC} ${CYAN}$*${NC}"; }
 
 # =============================================================================
 # Argument Parsing
@@ -86,17 +65,6 @@ Options:
   --clean         Clean build directory and AppDir before starting
   --help          Show this help message
 
-Examples:
-  $(basename "$0")              # Full build and package
-  $(basename "$0") --skip-build # Package only (assumes build exists)
-  $(basename "$0") --clean      # Clean build from scratch
-
-Requirements:
-  - cmake, make or ninja
-  - wget or curl
-  - qmake6 or qmake (for Qt6 detection)
-  - FUSE (for running/creating AppImages)
-
 EOF
     exit 0
 }
@@ -104,22 +72,10 @@ EOF
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --skip-build)
-                SKIP_BUILD=true
-                shift
-                ;;
-            --clean)
-                CLEAN=true
-                shift
-                ;;
-            --help|-h)
-                show_help
-                ;;
-            *)
-                log_error "Unknown option: $1"
-                echo "Use --help for usage information."
-                exit 1
-                ;;
+            --skip-build) SKIP_BUILD=true; shift ;;
+            --clean) CLEAN=true; shift ;;
+            --help|-h) show_help ;;
+            *) log_error "Unknown option: $1"; exit 1 ;;
         esac
     done
 }
@@ -133,46 +89,12 @@ check_dependencies() {
     
     local missing=()
     
-    # Check cmake
-    if ! command -v cmake &>/dev/null; then
-        missing+=("cmake")
-    else
-        log_info "Found cmake: $(cmake --version | head -1)"
-    fi
+    command -v cmake &>/dev/null || missing+=("cmake")
+    command -v wget &>/dev/null || command -v curl &>/dev/null || missing+=("wget or curl")
+    command -v make &>/dev/null || command -v ninja &>/dev/null || missing+=("make or ninja")
     
-    # Check wget or curl
-    if ! command -v wget &>/dev/null && ! command -v curl &>/dev/null; then
-        missing+=("wget or curl")
-    else
-        if command -v wget &>/dev/null; then
-            log_info "Found wget: $(wget --version | head -1)"
-        else
-            log_info "Found curl: $(curl --version | head -1)"
-        fi
-    fi
-    
-    # Check qmake6 or qmake
-    if command -v qmake6 &>/dev/null; then
-        log_info "Found qmake6: $(qmake6 --version | tail -1)"
-        export QMAKE=qmake6
-    elif command -v qmake &>/dev/null; then
-        log_info "Found qmake: $(qmake --version | tail -1)"
-        export QMAKE=qmake
-    else
-        missing+=("qmake6 or qmake")
-    fi
-    
-    # Check make or ninja
-    if ! command -v make &>/dev/null && ! command -v ninja &>/dev/null; then
-        missing+=("make or ninja")
-    fi
-    
-    # Report missing dependencies
     if [[ ${#missing[@]} -gt 0 ]]; then
-        log_error "Missing required dependencies:"
-        for dep in "${missing[@]}"; do
-            log_error "  - $dep"
-        done
+        log_error "Missing required dependencies: ${missing[*]}"
         exit 1
     fi
     
@@ -184,9 +106,7 @@ check_dependencies() {
 # =============================================================================
 
 download_file() {
-    local url="$1"
-    local output="$2"
-    
+    local url="$1" output="$2"
     if command -v wget &>/dev/null; then
         wget -q --show-progress -O "$output" "$url"
     else
@@ -195,31 +115,17 @@ download_file() {
 }
 
 download_tools() {
-    log_step "Downloading linuxdeploy tools"
+    log_step "Checking appimagetool"
     
     mkdir -p "${PROJECT_ROOT}/${TOOLS_DIR}"
-    cd "${PROJECT_ROOT}/${TOOLS_DIR}"
     
-    # Download linuxdeploy
-    if [[ ! -f "linuxdeploy-x86_64.AppImage" ]]; then
-        log_info "Downloading linuxdeploy..."
-        download_file "$LINUXDEPLOY_URL" "linuxdeploy-x86_64.AppImage"
-        chmod +x "linuxdeploy-x86_64.AppImage"
+    if [[ ! -f "${PROJECT_ROOT}/${TOOLS_DIR}/appimagetool-x86_64.AppImage" ]]; then
+        log_info "Downloading appimagetool..."
+        download_file "$APPIMAGETOOL_URL" "${PROJECT_ROOT}/${TOOLS_DIR}/appimagetool-x86_64.AppImage"
+        chmod +x "${PROJECT_ROOT}/${TOOLS_DIR}/appimagetool-x86_64.AppImage"
     else
-        log_info "linuxdeploy already downloaded"
+        log_info "appimagetool already available"
     fi
-    
-    # Download linuxdeploy-plugin-qt
-    if [[ ! -f "linuxdeploy-plugin-qt-x86_64.AppImage" ]]; then
-        log_info "Downloading linuxdeploy-plugin-qt..."
-        download_file "$LINUXDEPLOY_QT_URL" "linuxdeploy-plugin-qt-x86_64.AppImage"
-        chmod +x "linuxdeploy-plugin-qt-x86_64.AppImage"
-    else
-        log_info "linuxdeploy-plugin-qt already downloaded"
-    fi
-    
-    cd "${PROJECT_ROOT}"
-    log_info "Tools ready in ${TOOLS_DIR}/"
 }
 
 # =============================================================================
@@ -229,35 +135,19 @@ download_tools() {
 build_app() {
     if [[ "$SKIP_BUILD" == true ]]; then
         log_step "Skipping build (--skip-build specified)"
-        if [[ ! -d "${PROJECT_ROOT}/${BUILD_DIR}" ]]; then
-            log_error "Build directory does not exist. Cannot skip build."
-            exit 1
-        fi
+        [[ -d "${PROJECT_ROOT}/${BUILD_DIR}" ]] || { log_error "Build directory does not exist"; exit 1; }
         return
     fi
     
     log_step "Building application"
-    
     cd "${PROJECT_ROOT}"
     
-    # Clean if requested
-    if [[ "$CLEAN" == true ]]; then
-        log_info "Cleaning build directory..."
-        rm -rf "${BUILD_DIR}"
-    fi
+    [[ "$CLEAN" == true ]] && rm -rf "${BUILD_DIR}"
     
-    # Create build directory
     mkdir -p "${BUILD_DIR}"
     cd "${BUILD_DIR}"
     
-    # Configure with CMake
-    log_info "Configuring with CMake..."
-    cmake .. \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr
-    
-    # Build
-    log_info "Building..."
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
     cmake --build . --parallel "$(nproc)"
     
     cd "${PROJECT_ROOT}"
@@ -265,184 +155,127 @@ build_app() {
 }
 
 # =============================================================================
-# Create AppDir Structure
+# Create AppDir Structure (Manual approach - more reliable than linuxdeploy)
 # =============================================================================
 
 create_appdir() {
     log_step "Creating AppDir structure"
     
     cd "${PROJECT_ROOT}"
-    
-    # Clean existing AppDir if requested
-    if [[ "$CLEAN" == true ]]; then
-        log_info "Cleaning existing AppDir..."
-        rm -rf "${APPDIR}"
-    fi
-    
-    # Remove existing AppDir for fresh install
     rm -rf "${APPDIR}"
     
-    # Install to AppDir using DESTDIR
-    log_info "Installing to AppDir..."
-    cd "${BUILD_DIR}"
-    DESTDIR="${PROJECT_ROOT}/${APPDIR}" cmake --install .
+    # Create directory structure
+    mkdir -p "${APPDIR}/usr/bin"
+    mkdir -p "${APPDIR}/usr/lib/jules-linux/grammars"
+    mkdir -p "${APPDIR}/usr/plugins/platforms"
+    mkdir -p "${APPDIR}/usr/plugins/xcbglintegrations"
+    mkdir -p "${APPDIR}/usr/plugins/sqldrivers"
+    mkdir -p "${APPDIR}/usr/plugins/imageformats"
+    mkdir -p "${APPDIR}/usr/share/applications"
+    mkdir -p "${APPDIR}/usr/share/icons/hicolor/256x256/apps"
+    mkdir -p "${APPDIR}/usr/share/icons/hicolor/scalable/apps"
     
-    cd "${PROJECT_ROOT}"
-    log_info "AppDir created at ${APPDIR}/"
+    # Copy main executable
+    cp "${BUILD_DIR}/jules-linux" "${APPDIR}/usr/bin/"
+    
+    # Copy tree-sitter grammars
+    if [[ -d "grammars" ]]; then
+        cp -a grammars/*.so "${APPDIR}/usr/lib/jules-linux/grammars/" 2>/dev/null || true
+    fi
+    
+    # Copy desktop file and icons
+    cp "resources/jules-linux.desktop" "${APPDIR}/usr/share/applications/"
+    cp "resources/icons/jules-256.png" "${APPDIR}/usr/share/icons/hicolor/256x256/apps/jules.png" 2>/dev/null || true
+    cp "resources/icons/jules.svg" "${APPDIR}/usr/share/icons/hicolor/scalable/apps/" 2>/dev/null || true
+    
+    # Create top-level symlinks required by AppImage
+    ln -sf "usr/share/applications/jules-linux.desktop" "${APPDIR}/jules-linux.desktop"
+    cp "resources/icons/jules-256.png" "${APPDIR}/jules.png" 2>/dev/null || touch "${APPDIR}/jules.png"
+    
+    log_info "AppDir structure created"
 }
 
 # =============================================================================
-# Create AppRun Wrapper
-# =============================================================================
-
-create_apprun() {
-    log_step "Creating AppRun wrapper"
-    
-    cat > "${PROJECT_ROOT}/${APPDIR}/AppRun" << 'APPRUN_EOF'
-#!/bin/bash
-# =============================================================================
-# Jules AppRun - Application launcher for AppImage
-# =============================================================================
-
-# Get the directory where this AppRun script is located
-APPDIR="$(dirname "$(readlink -f "$0")")"
-
-# -----------------------------------------------------------------------------
-# Library Path Setup
-# -----------------------------------------------------------------------------
-# Add bundled libraries to the library search path
-export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${APPDIR}/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"
-
-# -----------------------------------------------------------------------------
-# Qt Plugin Path Setup
-# -----------------------------------------------------------------------------
-# Point Qt to the bundled plugins
-export QT_PLUGIN_PATH="${APPDIR}/usr/plugins:${QT_PLUGIN_PATH:-}"
-
-# Also set QML import path if QML is used
-export QML2_IMPORT_PATH="${APPDIR}/usr/qml:${QML2_IMPORT_PATH:-}"
-
-# -----------------------------------------------------------------------------
-# Tree-sitter Grammar Path
-# -----------------------------------------------------------------------------
-# Point to bundled grammar .so files
-export TREE_SITTER_GRAMMAR_PATH="${APPDIR}/usr/lib/jules-linux/grammars"
-
-# -----------------------------------------------------------------------------
-# XDG Paths for Config Isolation (optional)
-# -----------------------------------------------------------------------------
-# Uncomment these to fully isolate config/data from system installation
-# export XDG_CONFIG_HOME="${HOME}/.config"
-# export XDG_DATA_HOME="${HOME}/.local/share"
-# export XDG_CACHE_HOME="${HOME}/.cache"
-
-# Set application-specific paths
-export JULES_APPIMAGE=1
-export JULES_APPDIR="${APPDIR}"
-
-# -----------------------------------------------------------------------------
-# Launch Application
-# -----------------------------------------------------------------------------
-exec "${APPDIR}/usr/bin/jules-linux" "$@"
-APPRUN_EOF
-
-    chmod +x "${PROJECT_ROOT}/${APPDIR}/AppRun"
-    log_info "AppRun wrapper created"
-}
-
-# =============================================================================
-# Create Desktop File Symlinks
-# =============================================================================
-
-create_desktop_symlinks() {
-    log_step "Creating desktop file symlinks"
-    
-    cd "${PROJECT_ROOT}/${APPDIR}"
-    
-    # Find and symlink .desktop file
-    local desktop_file
-    desktop_file=$(find usr/share/applications -name "*.desktop" 2>/dev/null | head -1)
-    
-    if [[ -n "$desktop_file" ]]; then
-        ln -sf "$desktop_file" "${APP_NAME}.desktop"
-        log_info "Linked desktop file: $desktop_file"
-    else
-        log_warn "No .desktop file found in usr/share/applications/"
-    fi
-    
-    # Find and symlink icon
-    # Try various icon locations and sizes (prefer larger)
-    local icon_file=""
-    for size in 512 256 128 64 48 32; do
-        icon_file=$(find usr/share/icons -name "${APP_NAME}.png" -path "*${size}*" 2>/dev/null | head -1)
-        [[ -n "$icon_file" ]] && break
-    done
-    
-    # Fallback: any icon with the app name
-    if [[ -z "$icon_file" ]]; then
-        icon_file=$(find usr/share/icons -name "${APP_NAME}.*" 2>/dev/null | head -1)
-    fi
-    
-    # Fallback: pixmaps
-    if [[ -z "$icon_file" ]]; then
-        icon_file=$(find usr/share/pixmaps -name "${APP_NAME}.*" 2>/dev/null | head -1)
-    fi
-    
-    if [[ -n "$icon_file" ]]; then
-        # Get extension
-        local ext="${icon_file##*.}"
-        ln -sf "$icon_file" "${APP_NAME}.${ext}"
-        log_info "Linked icon: $icon_file"
-    else
-        log_warn "No icon found for ${APP_NAME}"
-    fi
-    
-    cd "${PROJECT_ROOT}"
-}
-
-# =============================================================================
-# Bundle Dependencies with linuxdeploy
+# Bundle Dependencies
 # =============================================================================
 
 bundle_dependencies() {
-    log_step "Bundling dependencies with linuxdeploy"
+    log_step "Bundling dependencies"
     
     cd "${PROJECT_ROOT}"
     
-    local linuxdeploy="${TOOLS_DIR}/linuxdeploy-x86_64.AppImage"
-    local linuxdeploy_qt="${TOOLS_DIR}/linuxdeploy-plugin-qt-x86_64.AppImage"
+    # Copy all library dependencies of the main executable
+    log_info "Copying library dependencies..."
+    ldd "${BUILD_DIR}/jules-linux" | grep "=> /" | awk '{print $3}' | while read -r lib; do
+        # Skip system libraries that should not be bundled
+        case "$(basename "$lib")" in
+            libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|ld-linux*.so*) continue ;;
+            libGL.so*|libGLX.so*|libGLdispatch.so*|libEGL.so*|libOpenGL.so*) continue ;;
+            libX11.so*|libxcb.so*|libfontconfig.so*|libfreetype.so*) continue ;;
+            libstdc++.so*|libgcc_s.so*) continue ;;
+        esac
+        cp -n "$lib" "${APPDIR}/usr/lib/" 2>/dev/null || true
+    done
     
-    # Verify tools exist
-    if [[ ! -x "$linuxdeploy" ]]; then
-        log_error "linuxdeploy not found at $linuxdeploy"
-        exit 1
-    fi
+    # Copy essential Qt plugins
+    log_info "Copying Qt plugins..."
+    local qt_plugin_dir
+    qt_plugin_dir=$(pkg-config --variable=plugindir Qt6Core 2>/dev/null || echo "/usr/lib/qt6/plugins")
     
-    if [[ ! -x "$linuxdeploy_qt" ]]; then
-        log_error "linuxdeploy-plugin-qt not found at $linuxdeploy_qt"
-        exit 1
-    fi
+    # Platform plugin (required)
+    cp "${qt_plugin_dir}/platforms/libqxcb.so" "${APPDIR}/usr/plugins/platforms/" 2>/dev/null || true
     
-    # Set environment for Qt plugin
-    export QMAKE="${QMAKE:-qmake6}"
-    export PATH="${TOOLS_DIR}:${PATH}"
+    # XCB GL integration
+    cp "${qt_plugin_dir}/xcbglintegrations/"*.so "${APPDIR}/usr/plugins/xcbglintegrations/" 2>/dev/null || true
     
-    # Run linuxdeploy with Qt plugin
-    # Note: Using --appimage-extract-and-run to avoid FUSE requirement during build
-    log_info "Running linuxdeploy with Qt plugin..."
+    # SQLite driver (for session storage)
+    cp "${qt_plugin_dir}/sqldrivers/libqsqlite.so" "${APPDIR}/usr/plugins/sqldrivers/" 2>/dev/null || true
     
-    "${linuxdeploy}" \
-        --appimage-extract-and-run \
-        --appdir "${APPDIR}" \
-        --plugin qt \
-        --output appimage \
-        --desktop-file "${APPDIR}/${APP_NAME}.desktop"
+    # Basic image formats only (skip problematic ones like jxr, heif, avif)
+    for fmt in libqico.so libqjpeg.so libqgif.so libqsvg.so; do
+        cp "${qt_plugin_dir}/imageformats/${fmt}" "${APPDIR}/usr/plugins/imageformats/" 2>/dev/null || true
+    done
     
-    log_info "Dependencies bundled successfully"
+    # Copy dependencies of Qt plugins
+    log_info "Resolving plugin dependencies..."
+    find "${APPDIR}/usr/plugins" -name "*.so" -exec ldd {} \; 2>/dev/null | \
+        grep "=> /" | awk '{print $3}' | sort -u | while read -r lib; do
+        case "$(basename "$lib")" in
+            libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|ld-linux*.so*) continue ;;
+            libGL.so*|libGLX.so*|libGLdispatch.so*|libEGL.so*|libOpenGL.so*) continue ;;
+            libX11.so*|libxcb.so*|libfontconfig.so*|libfreetype.so*) continue ;;
+            libstdc++.so*|libgcc_s.so*) continue ;;
+        esac
+        cp -n "$lib" "${APPDIR}/usr/lib/" 2>/dev/null || true
+    done
+    
+    log_info "Dependencies bundled ($(ls "${APPDIR}/usr/lib/" | wc -l) libraries)"
 }
 
 # =============================================================================
-# Create Final AppImage
+# Create AppRun
+# =============================================================================
+
+create_apprun() {
+    log_step "Creating AppRun"
+    
+    cat > "${PROJECT_ROOT}/${APPDIR}/AppRun" << 'EOF'
+#!/bin/bash
+APPDIR="$(dirname "$(readlink -f "$0")")"
+export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${LD_LIBRARY_PATH:-}"
+export QT_PLUGIN_PATH="${APPDIR}/usr/plugins:${QT_PLUGIN_PATH:-}"
+export TREE_SITTER_GRAMMAR_PATH="${APPDIR}/usr/lib/jules-linux/grammars"
+export JULES_APPIMAGE=1
+export JULES_APPDIR="${APPDIR}"
+exec "${APPDIR}/usr/bin/jules-linux" "$@"
+EOF
+    
+    chmod +x "${PROJECT_ROOT}/${APPDIR}/AppRun"
+    log_info "AppRun created"
+}
+
+# =============================================================================
+# Create AppImage
 # =============================================================================
 
 create_appimage() {
@@ -450,27 +283,18 @@ create_appimage() {
     
     cd "${PROJECT_ROOT}"
     
-    # linuxdeploy creates the AppImage with a default name
-    # Find it and rename to our desired output name
-    local created_appimage
-    created_appimage=$(ls -t Jules*.AppImage 2>/dev/null | head -1 || true)
-    
-    if [[ -z "$created_appimage" ]]; then
-        # Try generic pattern
-        created_appimage=$(ls -t *.AppImage 2>/dev/null | grep -v linuxdeploy | head -1 || true)
-    fi
-    
-    if [[ -n "$created_appimage" && "$created_appimage" != "$OUTPUT_NAME" ]]; then
-        mv "$created_appimage" "$OUTPUT_NAME"
-    fi
+    "${TOOLS_DIR}/appimagetool-x86_64.AppImage" --appimage-extract-and-run \
+        "${APPDIR}" "${OUTPUT_NAME}" 2>&1 || {
+        log_error "appimagetool failed"
+        exit 1
+    }
     
     if [[ -f "$OUTPUT_NAME" ]]; then
         local size
         size=$(du -h "$OUTPUT_NAME" | cut -f1)
         log_info "AppImage created: ${OUTPUT_NAME} (${size})"
-        log_info "To run: ./${OUTPUT_NAME}"
     else
-        log_error "AppImage creation failed - output file not found"
+        log_error "AppImage creation failed"
         exit 1
     fi
 }
@@ -481,13 +305,7 @@ create_appimage() {
 
 cleanup() {
     log_step "Cleaning up"
-    
-    # Remove AppDir (it's no longer needed after AppImage is created)
-    if [[ -d "${PROJECT_ROOT}/${APPDIR}" ]]; then
-        log_info "Removing AppDir..."
-        rm -rf "${PROJECT_ROOT}/${APPDIR}"
-    fi
-    
+    rm -rf "${PROJECT_ROOT}/${APPDIR}"
     log_info "Cleanup complete"
 }
 
@@ -503,16 +321,14 @@ main() {
     echo ""
     
     parse_args "$@"
-    
     cd "${PROJECT_ROOT}"
     
     check_dependencies
     download_tools
     build_app
     create_appdir
-    create_apprun
-    create_desktop_symlinks
     bundle_dependencies
+    create_apprun
     create_appimage
     cleanup
     
@@ -520,10 +336,8 @@ main() {
     log_step "Build complete!"
     echo ""
     echo "  Output: ${PROJECT_ROOT}/${OUTPUT_NAME}"
-    echo ""
     echo "  Run with: ./${OUTPUT_NAME}"
     echo ""
 }
 
-# Run main function
 main "$@"

@@ -8,6 +8,7 @@
 #include <QHBoxLayout>
 #include <QScrollArea>
 #include <QPainter>
+#include <QRegularExpression>
 
 namespace jules {
 
@@ -33,6 +34,7 @@ SessionDetailWidget::SessionDetailWidget(QWidget* parent)
     , m_stateLabel(nullptr)
     , m_repoLabel(nullptr)
     , m_branchLabel(nullptr)
+    , m_gitStatsLabel(nullptr)
     , m_emptyLabel(nullptr)
     , m_activityList(nullptr)
     , m_openBrowserBtn(nullptr)
@@ -111,8 +113,12 @@ void SessionDetailWidget::setupUi() {
     m_branchLabel = new QLabel(headerWidget);
     m_branchLabel->setFont(metaFont);
     
+    m_gitStatsLabel = new QLabel(headerWidget);
+    m_gitStatsLabel->setFont(metaFont);
+    
     metaRow->addWidget(m_repoLabel);
     metaRow->addWidget(m_branchLabel);
+    metaRow->addWidget(m_gitStatsLabel);
     metaRow->addStretch();
     
     headerLayout->addLayout(topRow);
@@ -341,6 +347,29 @@ void SessionDetailWidget::updateDisplay() {
         m_branchLabel->clear();
     }
     
+    // Git stats badge (e.g., "+50 -30")
+    QString gitStats = session.gitStatsSummary();
+    if (!gitStats.isEmpty()) {
+        // Parse and colorize the stats
+        QStringList parts = gitStats.split(' ');
+        QString addedPart = parts.size() > 0 ? parts[0] : "";
+        QString removedPart = parts.size() > 1 ? parts[1] : "";
+        
+        QColor addedColor = QColor(34, 197, 94);   // Green
+        QColor removedColor = QColor(239, 68, 68); // Red
+        
+        m_gitStatsLabel->setText(QString("<span style='color:%1'>%2</span> <span style='color:%3'>%4</span>")
+            .arg(addedColor.name())
+            .arg(addedPart)
+            .arg(removedColor.name())
+            .arg(removedPart));
+        m_gitStatsLabel->setTextFormat(Qt::RichText);
+        m_gitStatsLabel->show();
+    } else {
+        m_gitStatsLabel->clear();
+        m_gitStatsLabel->hide();
+    }
+    
     // PR button styling
     bool hasPR = hasPullRequestLink();
     m_pullRequestBtn->setVisible(hasPR);
@@ -381,9 +410,12 @@ void SessionDetailWidget::populateActivities() {
             
             bool isUser = (activity.originator == "USER");
             
-            auto* bubble = new QLabel(text);
+            auto* bubble = new QLabel();
+            bubble->setTextFormat(Qt::RichText);
+            bubble->setText(markdownToHtml(text));
             bubble->setWordWrap(true);
-            bubble->setTextInteractionFlags(Qt::TextSelectableByMouse);
+            bubble->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::LinksAccessibleByMouse);
+            bubble->setOpenExternalLinks(true);
             bubble->setMaximumWidth(450);  // Limit bubble width like macOS (minLength: 50 spacer)
             
             // User messages: accent background, white text
@@ -463,6 +495,35 @@ QString SessionDetailWidget::stateToDisplayText(SessionState state) const {
 QColor SessionDetailWidget::stateToColor(SessionState state) const {
     bool isDark = palette().window().color().lightness() < 128;
     return AppColors::stateColor(static_cast<int>(state), isDark);
+}
+
+QString SessionDetailWidget::markdownToHtml(const QString& markdown) const {
+    QString html = markdown.toHtmlEscaped();
+    
+    // Code blocks (triple backticks)
+    QRegularExpression codeBlockRe(R"(```(\w*)\n([\s\S]*?)```)");
+    html.replace(codeBlockRe, "<pre style='background-color: rgba(0,0,0,0.1); padding: 8px; border-radius: 4px; font-family: monospace;'>\\2</pre>");
+    
+    // Inline code (single backticks)
+    QRegularExpression inlineCodeRe(R"(`([^`]+)`)");
+    html.replace(inlineCodeRe, "<code style='background-color: rgba(0,0,0,0.1); padding: 2px 4px; border-radius: 2px; font-family: monospace;'>\\1</code>");
+    
+    // Bold (**text** or __text__)
+    QRegularExpression boldRe(R"(\*\*([^\*]+)\*\*)");
+    html.replace(boldRe, "<b>\\1</b>");
+    QRegularExpression boldRe2(R"(__([^_]+)__)");
+    html.replace(boldRe2, "<b>\\1</b>");
+    
+    // Italic (*text* or _text_)
+    QRegularExpression italicRe(R"(\*([^\*]+)\*)");
+    html.replace(italicRe, "<i>\\1</i>");
+    QRegularExpression italicRe2(R"(_([^_]+)_)");
+    html.replace(italicRe2, "<i>\\1</i>");
+    
+    // Line breaks
+    html.replace("\n", "<br>");
+    
+    return html;
 }
 
 }

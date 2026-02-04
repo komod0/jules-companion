@@ -41,6 +41,7 @@ private:
     QIcon stateToIcon(SessionState state) const;
     QString stateToDisplayText(SessionState state) const;
     QColor stateToColor(SessionState state) const;
+    QString markdownToHtml(const QString& markdown) const;
 
     std::optional<Session> m_session;
     
@@ -49,6 +50,7 @@ private:
     QLabel* m_stateLabel;
     QLabel* m_repoLabel;
     QLabel* m_branchLabel;
+    QLabel* m_gitStatsLabel;
     QLabel* m_emptyLabel;
     QListWidget* m_activityList;
     QPushButton* m_openBrowserBtn;

@@ -4,6 +4,11 @@ FetchContent_Declare(
   googletest
   URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
 )
+
+# Prevent GTest from being installed (we only need it for testing, not distribution)
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+set(INSTALL_GMOCK OFF CACHE BOOL "" FORCE)
+
 FetchContent_MakeAvailable(googletest)
 
 # Note: example_test.cpp and smoke_test.cpp were removed as they only tested

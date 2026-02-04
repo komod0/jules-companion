@@ -297,6 +297,59 @@ struct Session {
     bool hasCachedGitStats() const {
         return cachedGitStatsSummary.has_value() && !cachedGitStatsSummary->isEmpty();
     }
+    
+    /// Returns true if cached git stats are stale (session updated since computation)
+    bool areCachedGitStatsStale() const {
+        if (!cachedGitStatsUpdateTime.has_value()) return true;
+        QString currentTime = updateTime.value_or(createTime.value_or(QString()));
+        return cachedGitStatsUpdateTime.value() != currentTime;
+    }
+    
+    /// Returns true if this session needs activity fetching for git stats
+    bool needsActivityFetchForStats() const {
+        if (state == SessionState::Completed || state == SessionState::CompletedUnknown) {
+            return areCachedGitStatsStale();
+        }
+        if (state == SessionState::Queued || state == SessionState::Planning || 
+            state == SessionState::InProgress) {
+            return true;
+        }
+        return areCachedGitStatsStale();
+    }
+    
+    /// Returns the latest progress title from activities
+    QString latestProgressTitle() const {
+        if (!activities.has_value()) return QString();
+        for (auto it = activities->rbegin(); it != activities->rend(); ++it) {
+            if (it->progressUpdated.has_value() && it->progressUpdated->title.has_value()) {
+                return it->progressUpdated->title.value();
+            }
+        }
+        return QString();
+    }
+    
+    // Static helper methods for git stats computation
+    static QString computeGitStatsSummary(const QList<Activity>& activities);
+    static QList<CachedDiff> computeLatestDiffs(const QList<Activity>& activities);
+    static QList<QPair<QString, QString>> splitPatchByFile(const QString& patch);
+    static QString detectLanguageFromPatch(const QString& patch);
+    static QString detectLanguageFromPath(const QString& path);
+    
+    /// Updates cached diff data from activities
+    void updateCachedDiffData() {
+        if (activities.has_value()) {
+            QString summary = computeGitStatsSummary(activities.value());
+            if (!summary.isEmpty()) {
+                cachedGitStatsSummary = summary;
+            }
+            QList<CachedDiff> diffs = computeLatestDiffs(activities.value());
+            if (!diffs.isEmpty()) {
+                cachedLatestDiffs = diffs;
+                hasCachedDiffsFlag = true;
+            }
+            cachedGitStatsUpdateTime = updateTime.value_or(createTime.value_or(QString()));
+        }
+    }
 };
 
 struct ApiError {
@@ -351,6 +404,7 @@ public:
     void getSessions(int pageSize = 10, const QString& pageToken = QString());
     void getSession(const QString& sessionId);
     void getActivities(const QString& sessionId);
+    void getSources(const QString& pageToken = QString());
     void createSession(const Source& source, const QString& branchName, 
                        const QString& prompt);
     void sendMessage(const QString& sessionId, const QString& message);
@@ -364,7 +418,10 @@ signals:
     void sessionReceived(const Session& session);
     void activitiesReceived(const QString& sessionId, 
                             const QList<Activity>& activities);
+    void activitiesUnchanged(const QString& sessionId);  // Response unchanged (hash match)
     void activitiesError(const QString& sessionId, const ApiError& error);
+    void sourcesReceived(const QList<Source>& sources,
+                         const QString& nextPageToken);
     void sessionCreated(const Session& session);
     void messageSent(const QString& sessionId, bool success);
     void errorOccurred(const ApiError& error);
@@ -377,6 +434,7 @@ private:
         GetSessions,
         GetSession,
         GetActivities,
+        GetSources,
         CreateSession,
         SendMessage
     };
@@ -404,6 +462,7 @@ private:
 
     Session parseSession(const QJsonObject& json) const;
     Activity parseActivity(const QJsonObject& json) const;
+    Source parseSource(const QJsonObject& json) const;
     SessionState parseSessionState(const QString& stateStr) const;
     ApiError createApiError(QNetworkReply* reply, const QString& body = QString()) const;
 
@@ -416,6 +475,9 @@ private:
     bool m_ownsNetworkManager;
     RateLimiter m_rateLimiter;
     QMap<QNetworkReply*, PendingRequest> m_pendingRequests;
+    
+    // Response hash cache for skipping unchanged activity responses
+    QMap<QString, QByteArray> m_activityResponseHashes;  // sessionId -> hash
 };
 
 } // namespace jules

@@ -5,6 +5,7 @@
 #include <QVBoxLayout>
 #include <QPushButton>
 #include <QLabel>
+#include <QLineEdit>
 #include <QTimer>
 #include <QMap>
 
@@ -41,6 +42,10 @@ public:
     int pollingIntervalMs() const;
     void setPollingIntervalMs(int ms);
 
+    void setSearchText(const QString& text);
+    QString searchText() const;
+    void clearSearch();
+
 signals:
     void sessionSelected(const QString& sessionId);
     void createNewRequested();
@@ -52,11 +57,16 @@ private slots:
     void onSessionsReloaded();
     void onItemClicked(QListWidgetItem* item);
     void onPollTimerTimeout();
+    void onSearchTextChanged(const QString& text);
 
 private:
     void setupUi();
     void populateList();
+    void addSectionHeader(const QString& title);
     void updateSessionItem(QListWidgetItem* item, const Session& session);
+    int sessionIndexToListIndex(int sessionIndex) const;
+    void applySearchFilter();
+    bool sessionMatchesSearch(const Session& session) const;
     QIcon stateToIcon(SessionState state) const;
     QString stateToText(SessionState state) const;
     QColor stateToColor(SessionState state) const;
@@ -64,9 +74,11 @@ private:
     SessionRepository* m_repository;
     QListWidget* m_listWidget;
     QPushButton* m_newButton;
+    QLineEdit* m_searchEdit;
     QLabel* m_emptyLabel;
     QTimer* m_pollTimer;
     int m_pollingIntervalMs;
+    QString m_searchText;
     QMap<QString, int> m_sessionIndexMap;
 };
 

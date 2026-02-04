@@ -131,6 +131,7 @@ SessionListWidget::SessionListWidget(SessionRepository* repository, QWidget* par
     , m_repository(repository)
     , m_listWidget(nullptr)
     , m_newButton(nullptr)
+    , m_searchEdit(nullptr)
     , m_emptyLabel(nullptr)
     , m_pollTimer(nullptr)
     , m_pollingIntervalMs(DEFAULT_POLLING_INTERVAL_MS)
@@ -189,6 +190,25 @@ void SessionListWidget::setupUi() {
     headerLayout->addStretch();
     headerLayout->addWidget(m_newButton);
     
+    // Search field
+    m_searchEdit = new QLineEdit(this);
+    m_searchEdit->setPlaceholderText("Search sessions...");
+    m_searchEdit->setClearButtonEnabled(true);
+    m_searchEdit->setStyleSheet(R"(
+        QLineEdit {
+            background-color: palette(base);
+            border: 1px solid palette(mid);
+            border-radius: 8px;
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+        QLineEdit:focus {
+            border-color: palette(highlight);
+        }
+    )");
+    connect(m_searchEdit, &QLineEdit::textChanged,
+            this, &SessionListWidget::onSearchTextChanged);
+    
     // Session list with custom delegate
     m_listWidget = new QListWidget(this);
     m_listWidget->setFrameShape(QFrame::NoFrame);
@@ -228,41 +248,75 @@ void SessionListWidget::setupUi() {
     
     m_emptyLabel->hide();
     
+    // Insert search field after header
+    auto* searchContainer = new QWidget(this);
+    auto* searchLayout = new QHBoxLayout(searchContainer);
+    searchLayout->setContentsMargins(16, 0, 16, 12);
+    searchLayout->addWidget(m_searchEdit);
+    
+    // Rearrange layout: header, search, list, empty
+    layout->insertWidget(1, searchContainer);
+    
     m_pollTimer = new QTimer(this);
     connect(m_pollTimer, &QTimer::timeout, 
             this, &SessionListWidget::onPollTimerTimeout);
 }
 
 int SessionListWidget::sessionCount() const {
-    return m_listWidget->count();
+    // Count only session items, not headers
+    int count = 0;
+    for (int i = 0; i < m_listWidget->count(); ++i) {
+        if (!m_listWidget->item(i)->data(Qt::UserRole + 4).toBool()) {
+            count++;
+        }
+    }
+    return count;
+}
+
+// Helper to convert session index to list widget index (skipping headers)
+int SessionListWidget::sessionIndexToListIndex(int sessionIndex) const {
+    int sessionCount = 0;
+    for (int i = 0; i < m_listWidget->count(); ++i) {
+        if (!m_listWidget->item(i)->data(Qt::UserRole + 4).toBool()) {
+            if (sessionCount == sessionIndex) {
+                return i;
+            }
+            sessionCount++;
+        }
+    }
+    return -1;  // Not found
 }
 
 QString SessionListWidget::sessionDisplayText(int index) const {
-    if (index < 0 || index >= m_listWidget->count()) {
+    int listIndex = sessionIndexToListIndex(index);
+    if (listIndex < 0) {
         return QString();
     }
-    return m_listWidget->item(index)->text();
+    return m_listWidget->item(listIndex)->text();
 }
 
 QString SessionListWidget::sessionIdAt(int index) const {
-    if (index < 0 || index >= m_listWidget->count()) {
+    int listIndex = sessionIndexToListIndex(index);
+    if (listIndex < 0) {
         return QString();
     }
-    return m_listWidget->item(index)->data(Qt::UserRole).toString();
+    return m_listWidget->item(listIndex)->data(Qt::UserRole).toString();
 }
 
 QString SessionListWidget::sessionStateIcon(int index) const {
-    if (index < 0 || index >= m_listWidget->count()) {
+    int listIndex = sessionIndexToListIndex(index);
+    if (listIndex < 0) {
         return QString();
     }
-    return m_listWidget->item(index)->data(Qt::UserRole + 1).toString();
+    return m_listWidget->item(listIndex)->data(Qt::UserRole + 1).toString();
 }
 
 QString SessionListWidget::sessionStateText(int index) const {
-    if (index < 0 || index >= m_listWidget->count()) {
+    int listIndex = sessionIndexToListIndex(index);
+    if (listIndex < 0) {
         return QString();
     }
-    return m_listWidget->item(index)->data(Qt::UserRole + 2).toString();
+    return m_listWidget->item(listIndex)->data(Qt::UserRole + 2).toString();
 }
 
 QString SessionListWidget::currentSessionId() const {
@@ -284,16 +338,89 @@ void SessionListWidget::populateList() {
     
     QList<Session> sessions = m_repository->getAllSessions();
     
-    for (int i = 0; i < sessions.size(); ++i) {
-        const Session& session = sessions[i];
-        auto* item = new QListWidgetItem(m_listWidget);
-        updateSessionItem(item, session);
-        m_sessionIndexMap[session.id] = i;
+    if (sessions.isEmpty()) {
+        m_listWidget->setVisible(false);
+        m_emptyLabel->setVisible(true);
+        return;
     }
     
-    bool isEmpty = sessions.isEmpty();
-    m_listWidget->setVisible(!isEmpty);
-    m_emptyLabel->setVisible(isEmpty);
+    // Categorize sessions by time period
+    QList<Session> todaySessions;
+    QList<Session> thisWeekSessions;
+    QList<Session> olderSessions;
+    
+    QDateTime now = QDateTime::currentDateTime();
+    QDate today = now.date();
+    QDate weekStart = today.addDays(-today.dayOfWeek() + 1);  // Monday of current week
+    
+    for (const Session& session : sessions) {
+        QDateTime createDateTime;
+        if (session.createTime.has_value()) {
+            createDateTime = QDateTime::fromString(session.createTime.value(), Qt::ISODate);
+        }
+        
+        if (!createDateTime.isValid()) {
+            olderSessions.append(session);
+        } else if (createDateTime.date() == today) {
+            todaySessions.append(session);
+        } else if (createDateTime.date() >= weekStart) {
+            thisWeekSessions.append(session);
+        } else {
+            olderSessions.append(session);
+        }
+    }
+    
+    int itemIndex = 0;
+    
+    // Add Today section
+    if (!todaySessions.isEmpty()) {
+        addSectionHeader("Today");
+        for (const Session& session : todaySessions) {
+            auto* item = new QListWidgetItem(m_listWidget);
+            updateSessionItem(item, session);
+            m_sessionIndexMap[session.id] = itemIndex++;
+        }
+    }
+    
+    // Add This Week section
+    if (!thisWeekSessions.isEmpty()) {
+        addSectionHeader("This Week");
+        for (const Session& session : thisWeekSessions) {
+            auto* item = new QListWidgetItem(m_listWidget);
+            updateSessionItem(item, session);
+            m_sessionIndexMap[session.id] = itemIndex++;
+        }
+    }
+    
+    // Add Older section
+    if (!olderSessions.isEmpty()) {
+        addSectionHeader("Older");
+        for (const Session& session : olderSessions) {
+            auto* item = new QListWidgetItem(m_listWidget);
+            updateSessionItem(item, session);
+            m_sessionIndexMap[session.id] = itemIndex++;
+        }
+    }
+    
+    m_listWidget->setVisible(true);
+    m_emptyLabel->setVisible(false);
+}
+
+void SessionListWidget::addSectionHeader(const QString& title) {
+    auto* headerItem = new QListWidgetItem(title, m_listWidget);
+    headerItem->setFlags(Qt::NoItemFlags);  // Not selectable
+    headerItem->setData(Qt::UserRole + 4, true);  // Mark as header
+    
+    // Style the header
+    QFont headerFont = headerItem->font();
+    headerFont.setPointSize(11);
+    headerFont.setWeight(QFont::DemiBold);
+    headerItem->setFont(headerFont);
+    
+    // Use secondary text color with some padding
+    bool isDark = palette().window().color().lightness() < 128;
+    QColor headerColor = isDark ? QColor(160, 160, 160) : QColor(100, 100, 100);
+    headerItem->setForeground(headerColor);
 }
 
 void SessionListWidget::updateSessionItem(QListWidgetItem* item, const Session& session) {
@@ -315,8 +442,9 @@ void SessionListWidget::updateSessionItem(QListWidgetItem* item, const Session& 
 }
 
 void SessionListWidget::selectSession(int index) {
-    if (index >= 0 && index < m_listWidget->count()) {
-        m_listWidget->setCurrentRow(index);
+    int listIndex = sessionIndexToListIndex(index);
+    if (listIndex >= 0) {
+        m_listWidget->setCurrentRow(listIndex);
         QString sessionId = sessionIdAt(index);
         emit sessionSelected(sessionId);
     }
@@ -381,9 +509,10 @@ void SessionListWidget::onSessionChanged(const QString& id) {
     }
     
     if (m_sessionIndexMap.contains(id)) {
-        int index = m_sessionIndexMap[id];
-        if (index < m_listWidget->count()) {
-            updateSessionItem(m_listWidget->item(index), session.value());
+        int sessionIndex = m_sessionIndexMap[id];
+        int listIndex = sessionIndexToListIndex(sessionIndex);
+        if (listIndex >= 0 && listIndex < m_listWidget->count()) {
+            updateSessionItem(m_listWidget->item(listIndex), session.value());
         }
     } else {
         refresh();
@@ -423,6 +552,124 @@ QColor SessionListWidget::stateToColor(SessionState state) const {
     // Use AppColors for consistency
     bool isDark = palette().window().color().lightness() < 128;
     return AppColors::stateColor(static_cast<int>(state), isDark);
+}
+
+void SessionListWidget::setSearchText(const QString& text) {
+    m_searchEdit->setText(text);
+}
+
+QString SessionListWidget::searchText() const {
+    return m_searchText;
+}
+
+void SessionListWidget::clearSearch() {
+    m_searchEdit->clear();
+    m_searchText.clear();
+    applySearchFilter();
+}
+
+void SessionListWidget::onSearchTextChanged(const QString& text) {
+    m_searchText = text;
+    applySearchFilter();
+}
+
+void SessionListWidget::applySearchFilter() {
+    if (m_searchText.isEmpty()) {
+        // Show all items
+        for (int i = 0; i < m_listWidget->count(); ++i) {
+            m_listWidget->item(i)->setHidden(false);
+        }
+        return;
+    }
+    
+    QString searchLower = m_searchText.toLower();
+    QList<Session> sessions = m_repository->getAllSessions();
+    
+    // Track which section headers should be visible
+    bool currentSectionHasVisibleItems = false;
+    QListWidgetItem* currentHeader = nullptr;
+    
+    for (int i = 0; i < m_listWidget->count(); ++i) {
+        QListWidgetItem* item = m_listWidget->item(i);
+        bool isHeader = item->data(Qt::UserRole + 4).toBool();
+        
+        if (isHeader) {
+            // Hide header initially, show if any items below it are visible
+            if (currentHeader) {
+                currentHeader->setHidden(!currentSectionHasVisibleItems);
+            }
+            currentHeader = item;
+            currentSectionHasVisibleItems = false;
+        } else {
+            QString sessionId = item->data(Qt::UserRole).toString();
+            
+            // Find the session and check if it matches
+            bool matches = false;
+            for (const Session& session : sessions) {
+                if (session.id == sessionId) {
+                    matches = sessionMatchesSearch(session);
+                    break;
+                }
+            }
+            
+            item->setHidden(!matches);
+            if (matches) {
+                currentSectionHasVisibleItems = true;
+            }
+        }
+    }
+    
+    // Handle last section header
+    if (currentHeader) {
+        currentHeader->setHidden(!currentSectionHasVisibleItems);
+    }
+    
+    // Check if any items are visible
+    bool anyVisible = false;
+    for (int i = 0; i < m_listWidget->count(); ++i) {
+        if (!m_listWidget->item(i)->isHidden()) {
+            anyVisible = true;
+            break;
+        }
+    }
+    
+    // Show/hide empty state based on filter results
+    if (!anyVisible && !sessions.isEmpty()) {
+        m_emptyLabel->setText("No matching sessions found.");
+        m_emptyLabel->setVisible(true);
+        m_listWidget->setVisible(false);
+    } else {
+        m_emptyLabel->setText("No sessions yet.\nCreate a new one to get started.");
+        m_emptyLabel->setVisible(sessions.isEmpty());
+        m_listWidget->setVisible(!sessions.isEmpty());
+    }
+}
+
+bool SessionListWidget::sessionMatchesSearch(const Session& session) const {
+    if (m_searchText.isEmpty()) {
+        return true;
+    }
+    
+    QString searchLower = m_searchText.toLower();
+    
+    // Check title
+    if (session.title.has_value() && 
+        session.title.value().toLower().contains(searchLower)) {
+        return true;
+    }
+    
+    // Check prompt
+    if (session.prompt.toLower().contains(searchLower)) {
+        return true;
+    }
+    
+    // Check source context
+    if (session.sourceContext.has_value() &&
+        session.sourceContext->source.toLower().contains(searchLower)) {
+        return true;
+    }
+    
+    return false;
 }
 
 }

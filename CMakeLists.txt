@@ -105,6 +105,10 @@ add_library(jules_ui STATIC
     src/ui/flash_message_widget.cpp
     src/ui/hotkey_edit.cpp
     src/ui/settings_dialog.cpp
+    src/ui/session_polling_controller.cpp
+    src/ui/notification_manager.cpp
+    src/ui/merge_conflict_dialog.cpp
+    src/ui/update_checker.cpp
     include/ui/main_window.h
     include/ui/session_list_widget.h
     include/ui/new_session_dialog.h
@@ -113,6 +117,10 @@ add_library(jules_ui STATIC
     include/ui/flash_message_widget.h
     include/ui/hotkey_edit.h
     include/ui/settings_dialog.h
+    include/ui/session_polling_controller.h
+    include/ui/notification_manager.h
+    include/ui/merge_conflict_dialog.h
+    include/ui/update_checker.h
 )
 
 target_include_directories(jules_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -124,6 +132,7 @@ target_link_libraries(jules_ui PUBLIC
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
+    Qt6::Network
     Qt6::OpenGL
     Qt6::OpenGLWidgets
 )
