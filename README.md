@@ -1,174 +1,147 @@
-# Jules Companion
+# Jules Companion for Linux
 
-Native desktop applications for interacting with the Jules AI coding assistant API.
+Native Qt6 desktop client for the [Jules](https://jules.google.com) AI coding assistant. Built with C++20, Qt 6, and OpenGL 4.3 for high-performance diff visualization and a polished desktop experience on Linux.
 
-## Platforms
+> Forked from the original macOS SwiftUI application by [FUN RUN, LLC](https://github.com/funrun). The macOS source is preserved in the `macos/` directory for reference.
 
-| Platform | Status | Technology | Directory |
-|----------|--------|------------|-----------|
-| **Linux** | **Complete** | C++20, Qt 6, OpenGL | `src/`, `include/` |
-| **macOS** | Production | Swift, SwiftUI, Metal | `macos/` |
+## Features
 
----
+- **Session Management** -- Create, browse, and manage coding sessions with real-time status polling
+- **OpenGL Diff Rendering** -- GPU-accelerated diff viewer with character-level inline highlighting, syntax coloring (19 languages via tree-sitter), and text selection/copy
+- **System Tray** -- Animated tray icon with colored status indicators, context menu, and popup panel (X11 AppIndicator / Wayland SNI)
+- **Global Hotkeys** -- Ctrl+Alt+J to toggle the window (X11 XGrabKey / Wayland xdg-desktop-portal)
+- **Dark and Light Themes** -- Follows system preference or manual selection; all UI components adapt live
+- **Offline Support** -- Queue sessions while offline, auto-sync with exponential backoff when connectivity returns
+- **Notifications** -- Desktop notifications for session state changes (D-Bus org.freedesktop.Notifications)
+- **GPU Animations** -- Boids particle system and Gerstner wave effects using compute shaders
+- **AppImage Distribution** -- Single-file portable packaging for any Linux distro
 
-## Linux Port (Complete)
+## Building
 
-Native Qt6/C++/OpenGL application for Linux desktops (X11 and Wayland).
+### Prerequisites
 
-### Features
+| Dependency | Version |
+|---|---|
+| CMake | 3.24+ |
+| Qt 6 | 6.4+ (Core, Gui, Widgets, Network, Sql, OpenGL, OpenGLWidgets, DBus) |
+| FreeType | 2.x |
+| XCB + xcb-keysyms | Any (optional, for X11 global hotkeys) |
+| OpenGL | 4.3+ capable GPU |
+| C++ Compiler | GCC 12+ or Clang 15+ (C++20) |
 
-- **Session Management**: Create, view, and manage coding sessions
-- **Real-time Updates**: Live polling for session status and activity updates  
-- **Diff Viewing**: High-performance OpenGL-accelerated diff visualization
-- **Syntax Highlighting**: Tree-sitter powered highlighting for 20 languages
-- **GPU Animations**: Boids particle system and Gerstner wave effects
-- **System Tray**: Integration with system tray (X11 AppIndicator, Wayland SNI)
-- **Global Hotkeys**: Ctrl+Alt+J to toggle window (X11 XGrabKey, Wayland Portal)
-- **Dark/Light Theme**: Follows system preference or manual selection
-- **Settings Dialog**: API key, theme, notifications, font size configuration
-- **AppImage Packaging**: Universal Linux distribution with CI/CD
+### Install Dependencies
 
-### Building
-
-**Requirements:**
-- CMake 3.24+
-- Qt 6.4+ (Core, Gui, Widgets, Network, Sql, OpenGL, OpenGLWidgets, DBus)
-- FreeType 2
-- XCB + xcb-keysyms (for X11 hotkeys)
-- OpenGL 4.3+ capable GPU (for compute shaders)
-
-**Build:**
 ```bash
-# Install dependencies (Ubuntu/Debian)
+# Ubuntu / Debian
 sudo apt install cmake qt6-base-dev qt6-tools-dev libqt6opengl6-dev \
                  libfreetype-dev libxcb-keysyms1-dev
 
-# Build
+# Fedora
+sudo dnf install cmake qt6-qtbase-devel qt6-qttools-devel \
+                 freetype-devel libxcb-devel xcb-util-keysyms-devel
+
+# Arch Linux
+sudo pacman -S cmake qt6-base qt6-tools freetype2 xcb-util-keysyms
+```
+
+### Compile
+
+```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
+```
 
-# Run tests
-cd build && ctest --output-on-failure
+### Run
 
-# Run application
+```bash
 ./build/jules-linux
 ```
 
-### Project Structure
+### Run Tests
 
-```
-jules-companion/
-├── src/                  # C++ source files (Linux port)
-│   ├── api/              # Jules API client (Qt Network)
-│   ├── data/             # SQLite persistence (Qt Sql)
-│   ├── highlighting/     # Tree-sitter syntax highlighting
-│   ├── input/            # Global hotkeys (X11/Wayland)
-│   ├── rendering/        # OpenGL widgets (diff, boids, wave)
-│   └── ui/               # Qt Widgets UI
-├── include/              # C++ headers
-├── shaders/              # GLSL shaders (text, boids, wave)
-├── grammars/             # Tree-sitter grammar .so files
-├── tests/                # Unit tests (Google Test + Qt Test)
-├── scripts/              # Build scripts (AppImage)
-├── resources/            # Icons, desktop file
-├── .github/workflows/    # CI/CD (AppImage builds)
-├── macos/                # Original macOS app (Swift/SwiftUI/Metal)
-│   ├── jules/            # Swift source files
-│   ├── jules.xcodeproj/  # Xcode project
-│   └── Package.swift     # Swift Package Manager
-└── docs/                 # Architecture documentation
-```
-
-### Distribution
-
-**AppImage (Recommended):**
 ```bash
-# Build AppImage
-./scripts/build-appimage.sh
+cd build && ctest --output-on-failure
+```
 
-# Run
+## Distribution
+
+### AppImage (Recommended)
+
+```bash
+./scripts/build-appimage.sh
 ./Jules-x86_64.AppImage
 ```
 
-Tested on: Ubuntu 22.04, Fedora 38, Arch Linux
-
----
-
-## macOS
-
-<img width="2416" height="1616" alt="jules-desktop" src="https://github.com/user-attachments/assets/b73d897e-845b-4aba-9a2e-7b268a8134d1" />
-
-Native SwiftUI menu bar application with Metal-accelerated rendering.
-
-### Features
-
-- **Menu Bar Integration**: Quick access from your menu bar or centered floating panel
-- **Session Management**: Create, view, and manage coding sessions
-- **Real-time Updates**: Live polling for session status and activity updates
-- **Diff Viewing**: High-performance Metal-accelerated diff visualization
-- **Merge Conflict Resolution**: Visual merge conflict handling
-- **Offline Support**: Queue sessions when offline, sync when connectivity returns
-- **Keyboard Shortcuts**: Global hotkeys for quick access
-- **Auto-updates**: Built-in update mechanism via Sparkle
-
-### Requirements
-
-- macOS 13.0 or later
-- Xcode 15.0 or later (for building)
-- A Jules API key (obtain from [jules.google.com](https://jules.google.com))
-
-### Building
+### Local Install
 
 ```bash
-cd macos
-open jules.xcodeproj
-# Build and run (Cmd+R)
+./scripts/install-local.sh
 ```
 
-### Project Structure (macOS)
+Installs the binary, desktop entry, and icons to `~/.local/`.
 
-```
-macos/
-├── jules/
-│   ├── AppDelegate.swift       # App lifecycle, menu bar, hotkeys
-│   ├── DataManager.swift       # Core data management and API coordination
-│   ├── APIService.swift        # REST API client for Jules backend
-│   ├── SessionRepository.swift # Session persistence (GRDB/SQLite)
-│   ├── Flux/                   # Metal-based diff rendering
-│   ├── MergeConflictWindow/    # Merge conflict UI
-│   ├── Canvas/                 # Drawing/annotation features
-│   └── ...
-├── jules.xcodeproj/            # Xcode project
-└── Package.swift               # Swift Package Manager
+### System Install
+
+```bash
+cmake --install build --prefix /usr/local
 ```
 
-### Keyboard Shortcuts
+Installs the binary, desktop entry, icons, and tree-sitter grammars to standard FreeDesktop locations.
 
-Default shortcuts (configurable in Settings):
+Tested on: Ubuntu 22.04+, Fedora 38+, Arch Linux.
 
-- **Control+Option+J**: Toggle Jules menu
-- **Control+Option+S**: Capture screenshot
-- **Control+Option+V**: Voice input (macOS 26.0+)
+## Configuration
 
-### Dependencies
+On first launch, open **Settings** (system tray right-click or toolbar button) and enter your Jules API key. Alternatively, set the `JULES_API_KEY` environment variable.
 
-- [GRDB](https://github.com/groue/GRDB.swift) - SQLite toolkit
-- [Sparkle](https://github.com/sparkle-project/Sparkle) - Auto-updates
-- [HotKey](https://github.com/soffes/HotKey) - Global keyboard shortcuts
-- [SwiftTreeSitter](https://github.com/ChimeHQ/SwiftTreeSitter) - Syntax parsing
-- [Lottie](https://github.com/airbnb/lottie-ios) - Animations
-- [Firebase iOS SDK](https://github.com/firebase/firebase-ios-sdk) - Optional AI features
+Settings are stored in `~/.config/jules-linux/` via `QSettings`.
 
----
+## Project Structure
+
+```
+jules-companion/
+├── src/                    C++ source files
+│   ├── api/                Jules REST API client (Qt Network)
+│   ├── data/               SQLite persistence, network monitor, offline sync
+│   ├── highlighting/       Tree-sitter syntax highlighting
+│   ├── input/              Global hotkeys (X11 / Wayland)
+│   ├── rendering/          OpenGL diff renderer, boids, wave, font atlas
+│   └── ui/                 Qt Widgets (main window, dialogs, tray, panels)
+├── include/                C++ headers (mirrors src/ layout)
+├── shaders/                GLSL shaders (text, boids, wave, compute)
+├── grammars/               Tree-sitter grammar shared libraries (.so)
+├── tests/                  Unit tests (Google Test + Qt Test)
+├── scripts/                Build and packaging scripts
+├── resources/              Icons, desktop entry, Qt resources
+├── docs/                   Architecture and development documentation
+└── macos/                  Original macOS app (Swift/SwiftUI/Metal) -- reference only
+```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a detailed breakdown of the module architecture, dependency graph, and rendering pipeline.
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| Ctrl+Alt+J | Toggle window (global hotkey, configurable) |
+| Ctrl+N | New session |
+| Ctrl+R | Refresh sessions |
+| Ctrl+F | Search sessions |
+| Ctrl+C | Copy selected diff text |
+| Up/Down | Navigate session list |
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit issues and pull requests.
+See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for build setup, code style, and pull request guidelines.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License -- see [LICENSE](LICENSE) for details.
 
-## Trademarks
+## Acknowledgments
 
-"Jules" name, logo, and branding are trademarks of Alphabet Inc. and are used with permission.
+- Original macOS application by [FUN RUN, LLC](https://github.com/funrun)
+- [Qt](https://www.qt.io/) -- cross-platform application framework
+- [tree-sitter](https://tree-sitter.github.io/) -- incremental parsing for syntax highlighting
+- [FreeType](https://freetype.org/) -- font rendering for the OpenGL text pipeline
+- "Jules" name and branding are trademarks of Alphabet Inc.
