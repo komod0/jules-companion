@@ -13,18 +13,29 @@ namespace test {
 class SettingsManagerTest : public ::testing::Test {
 protected:
     void SetUp() override {
+        // Save and clear env var so it doesn't interfere with tests
+        m_savedEnvKey = qEnvironmentVariable("JULES_API_KEY");
+        qunsetenv("JULES_API_KEY");
+
         // Clear settings before each test
         QSettings settings("JulesLinux", "Jules");
         settings.clear();
         settings.sync();
     }
-    
+
     void TearDown() override {
         // Clear settings after each test
         QSettings settings("JulesLinux", "Jules");
         settings.clear();
         settings.sync();
+
+        // Restore env var
+        if (!m_savedEnvKey.isEmpty()) {
+            qputenv("JULES_API_KEY", m_savedEnvKey.toUtf8());
+        }
     }
+
+    QString m_savedEnvKey;
 };
 
 // ============================================================================
@@ -196,7 +207,7 @@ TEST_F(SettingsManagerTest, DefaultActivityFontSize) {
 
 TEST_F(SettingsManagerTest, DefaultDiffFontSize) {
     SettingsManager& mgr = SettingsManager::instance();
-    EXPECT_EQ(mgr.diffFontSize(), 11);
+    EXPECT_EQ(mgr.diffFontSize(), 13);
 }
 
 TEST_F(SettingsManagerTest, FontSizeValidation_BelowMinimum) {

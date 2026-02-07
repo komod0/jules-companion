@@ -489,7 +489,8 @@ TEST_F(SessionManagerTest, SessionDetailWidgetShowsActivities) {
     SessionDetailWidget widget;
     widget.setSession(session);
     
-    EXPECT_EQ(widget.activityCount(), 2);
+    // 2 activities + 1 prompt bubble prepended = 3 items
+    EXPECT_EQ(widget.activityCount(), 3);
 }
 
 TEST_F(SessionManagerTest, SessionDetailWidgetShowsPullRequestLink) {
