@@ -2,7 +2,7 @@
 
 #include <QMainWindow>
 #include <QSplitter>
-#include <QToolBar>
+
 #include <QStatusBar>
 #include <QSettings>
 #include <QMenuBar>
@@ -30,8 +30,6 @@ public:
 
     QWidget* sidebarWidget() const;
     QWidget* contentWidget() const;
-    QToolBar* mainToolbar() const;
-    
     // Set content for sidebar and main content area
     void setSidebarContent(QWidget* widget);
     void setMainContent(QWidget* widget);
@@ -49,6 +47,9 @@ public:
 
     void showFlashMessage(const QString& message, FlashMessageType type, int durationMs = 3000);
 
+public slots:
+    void toggleSidebar();
+
 signals:
     void themeChanged(Theme theme);
     void settingsRequested();
@@ -60,7 +61,6 @@ protected:
 private:
     void setupUi();
     void setupMenuBar();
-    void setupToolbar();
     void setupStatusBar();
     void setupSplitter();
     void applyTheme();
@@ -72,13 +72,18 @@ private:
     QWidget* m_content;
     QVBoxLayout* m_sidebarLayout;
     QVBoxLayout* m_contentLayout;
-    QToolBar* m_toolbar;
     QMenuBar* m_menuBar;
     FlashMessageWidget* m_flashMessage = nullptr;
     QLabel* m_networkIndicator = nullptr;
     Theme m_theme = Theme::System;
     Theme m_effectiveTheme = Theme::Light;
-    
+
+    // View menu
+    QMenu* m_viewMenu = nullptr;
+    QAction* m_toggleSidebarAction = nullptr;
+    bool m_sidebarCollapsed = false;
+    QList<int> m_savedSplitterSizes;
+
     // Placeholders to remove when real content is set
     QWidget* m_sidebarPlaceholder = nullptr;
     QWidget* m_contentPlaceholder = nullptr;

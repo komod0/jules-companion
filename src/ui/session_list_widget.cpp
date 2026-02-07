@@ -136,7 +136,7 @@ public:
         
         painter->setPen(textColor);
         QFont font = option.font;
-        font.setPointSize(13);
+        font.setPointSize(11);
         font.setWeight(QFont::Medium);
         painter->setFont(font);
         
@@ -160,7 +160,7 @@ public:
             return QSize(200, 28);
         }
         // Row height: 8pt vertical padding * 2 + text height ≈ 36px
-        return QSize(200, 36);
+        return QSize(200, 32);
     }
 };
 
@@ -207,6 +207,7 @@ void SessionListWidget::setupUi() {
     m_newButton = new QPushButton("+", header);
     m_newButton->setFixedSize(28, 28);
     m_newButton->setToolTip("Create new session");
+    m_newButton->setCursor(Qt::PointingHandCursor);
     m_newButton->setStyleSheet(R"(
         QPushButton {
             background-color: transparent;

@@ -22,18 +22,11 @@ static bool isWayland() {
 }
 
 TrayPopupWidget::TrayPopupWidget(SessionRepository* repository, QWidget* parent)
-    : QWidget(parent, Qt::Window | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint | Qt::WindowStaysOnTopHint)
+    : QWidget(parent, Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint)
     , m_repository(repository)
     , m_opacity(0.0)
     , m_fadeAnimation(nullptr)
 {
-    // On X11, we can use Qt::Popup for auto-close behavior
-    // On Wayland, Qt::Popup requires a transient parent with focus, which tray popups don't have
-    // So we use Qt::Window + Qt::WindowStaysOnTopHint and handle close manually
-    if (!isWayland()) {
-        // X11: use Popup flag for native click-outside-to-close
-        setWindowFlags(Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
-    }
     
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_ShowWithoutActivating, false);
@@ -329,6 +322,12 @@ void TrayPopupWidget::paintEvent(QPaintEvent* event) {
 }
 
 void TrayPopupWidget::showNearPosition(const QPoint& globalPos) {
+    // On Wayland, Qt::Popup requires a visible parent surface
+    if (isWayland() && parentWidget() && !parentWidget()->isVisible()) {
+        parentWidget()->show();
+        parentWidget()->raise();
+        parentWidget()->activateWindow();
+    }
     positionOnScreen(globalPos);
     refreshSessions();
     show();
@@ -339,7 +338,15 @@ void TrayPopupWidget::showNearPosition(const QPoint& globalPos) {
 }
 
 void TrayPopupWidget::positionOnScreen(const QPoint& nearPos) {
-    QScreen* screen = QGuiApplication::screenAt(nearPos);
+    QScreen* screen = nullptr;
+
+    // On Wayland, QCursor::pos() / tray geometry often return (0,0).
+    // Detect this and treat as unreliable.
+    bool posReliable = (nearPos.x() > 10 || nearPos.y() > 10);
+
+    if (posReliable) {
+        screen = QGuiApplication::screenAt(nearPos);
+    }
     if (!screen) {
         screen = QGuiApplication::primaryScreen();
     }
@@ -348,36 +355,47 @@ void TrayPopupWidget::positionOnScreen(const QPoint& nearPos) {
     QRect full  = screen->geometry();
 
     // Detect panel location by comparing available vs full geometry.
-    // A gap at the top means a top panel (GNOME, KDE default, macOS-style).
-    // A gap at the bottom means a bottom panel (Windows-style taskbar).
     int topGap    = avail.top()    - full.top();
     int bottomGap = full.bottom()  - avail.bottom();
     bool panelAtTop    = topGap > 10;
     bool panelAtBottom = bottomGap > 10;
 
-    // Also check the click/icon position relative to screen
-    bool nearTop    = nearPos.y() < full.top() + full.height() * 0.20;
-    bool nearBottom = nearPos.y() > full.bottom() - full.height() * 0.20;
+    int x, y;
 
-    // X: right-align popup when icon is on right half of screen
-    int x;
-    if (nearPos.x() > avail.center().x()) {
-        x = nearPos.x() - width() + 20;  // Right-align with small offset
+    if (!posReliable) {
+        // Cursor/tray position unreliable (Wayland) — use panel geometry.
+        // System tray is typically at the panel edge, right side.
+        if (panelAtBottom) {
+            x = avail.right() - width() - 8;
+            y = avail.bottom() - height() - 4;
+        } else if (panelAtTop) {
+            x = avail.right() - width() - 8;
+            y = avail.top() + 4;
+        } else {
+            // No detectable panel gap — default to bottom-right
+            x = avail.right() - width() - 8;
+            y = avail.bottom() - height() - 4;
+        }
     } else {
-        x = nearPos.x() - 20;  // Left-align with small offset
-    }
+        // Reliable cursor position — place near the click point
+        bool nearTop    = nearPos.y() < full.top() + full.height() * 0.20;
+        bool nearBottom = nearPos.y() > full.bottom() - full.height() * 0.20;
 
-    // Y: position based on where the panel is
-    int y;
-    if (panelAtTop || nearTop) {
-        // Panel at top: drop down just below the panel
-        y = avail.top() + 4;
-    } else if (panelAtBottom || nearBottom) {
-        // Panel at bottom: popup rises above the panel
-        y = avail.bottom() - height() - 4;
-    } else {
-        // No clear panel or icon in the middle — snap to top of available area
-        y = avail.top() + 4;
+        // X: right-align popup when icon is on right half of screen
+        if (nearPos.x() > avail.center().x()) {
+            x = nearPos.x() - width() + 20;
+        } else {
+            x = nearPos.x() - 20;
+        }
+
+        // Y: position based on where the panel is
+        if (panelAtTop || nearTop) {
+            y = avail.top() + 4;
+        } else if (panelAtBottom || nearBottom) {
+            y = avail.bottom() - height() - 4;
+        } else {
+            y = avail.top() + 4;
+        }
     }
 
     // Clamp to screen edges

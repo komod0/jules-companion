@@ -12,6 +12,8 @@
 #include <QDebug>
 
 #include "ui/main_window.h"
+#include "ui/app_colors.h"
+#include "ui/diff_panel_widget.h"
 #include "ui/system_tray.h"
 #include "ui/tray_popup_widget.h"
 #include "ui/session_list_widget.h"
@@ -141,13 +143,6 @@ void AppController::createUi()
     m_window = std::make_unique<MainWindow>();
     m_window->setTheme(settings.theme());
 
-    // Add Settings button to toolbar
-    QAction* toolbarSettingsAction = m_window->mainToolbar()->addAction(QString::fromUtf8("\xe2\x9a\x99 Settings"));
-    connect(toolbarSettingsAction, &QAction::triggered, [this]() {
-        SettingsDialog dialog(m_repository.get(), m_window.get());
-        dialog.exec();
-    });
-
     // Create session list widget (for sidebar)
     m_sessionListWidget = new SessionListWidget(m_repository.get());
     qDebug() << "Created SessionListWidget";
@@ -168,7 +163,7 @@ void AppController::createUi()
     }
 
     // Create tray popup widget (like macOS menu bar popup)
-    m_trayPopup = new TrayPopupWidget(m_repository.get());
+    m_trayPopup = new TrayPopupWidget(m_repository.get(), m_window.get());
 
     // Create global hotkey manager
     m_hotkeyManager = std::make_unique<GlobalHotkeyManager>();
@@ -190,14 +185,21 @@ void AppController::connectSignals()
     connect(&settings, &SettingsManager::themeChanged,
             m_window.get(), &MainWindow::setTheme);
 
-    // Theme -> system tray icon adaptation
+    // Theme -> system tray + diff panel adaptation
     connect(m_window.get(), &MainWindow::themeChanged,
             [this](Theme) {
-        bool isDark = (m_window->effectiveTheme() == Theme::Dark);
+        Theme eff = m_window->effectiveTheme();
+        bool isDark = AppColors::colorsForTheme(eff).isDark;
         m_systemTray->updateTheme(isDark);
+        if (m_sessionDetailWidget->diffPanel()) {
+            m_sessionDetailWidget->diffPanel()->updateDarkMode(isDark);
+        }
     });
-    // Set initial tray theme
-    m_systemTray->updateTheme(m_window->effectiveTheme() == Theme::Dark);
+    // Set initial tray/diff theme
+    {
+        bool isDark = AppColors::colorsForTheme(m_window->effectiveTheme()).isDark;
+        m_systemTray->updateTheme(isDark);
+    }
 
     connect(&settings, &SettingsManager::apiKeyChanged, [this]() {
         auto& s = SettingsManager::instance();

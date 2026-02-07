@@ -865,6 +865,13 @@ Activity JulesApiClient::parseActivity(const QJsonObject& json) const {
         activity.artifacts = artifacts;
     }
     
+    if (json.contains("generatedTitle") && !json["generatedTitle"].isNull()) {
+        activity.generatedTitle = json["generatedTitle"].toString();
+    }
+    if (json.contains("generatedDescription") && !json["generatedDescription"].isNull()) {
+        activity.generatedDescription = json["generatedDescription"].toString();
+    }
+
     return activity;
 }
 

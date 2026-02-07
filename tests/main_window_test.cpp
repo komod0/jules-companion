@@ -11,7 +11,6 @@
 #include <QApplication>
 #include <QMainWindow>
 #include <QSplitter>
-#include <QToolBar>
 #include <QStatusBar>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -161,27 +160,6 @@ TEST_F(MainWindowTest, SplitterCanBeResized) {
 }
 
 // ============================================================================
-// Toolbar Tests
-// ============================================================================
-
-TEST_F(MainWindowTest, HasToolbar) {
-    MainWindow window;
-    
-    QToolBar* toolbar = window.findChild<QToolBar*>();
-    EXPECT_NE(toolbar, nullptr);
-}
-
-TEST_F(MainWindowTest, ToolbarIsVisible) {
-    MainWindow window;
-    window.show();
-    processEvents();
-    
-    QToolBar* toolbar = window.findChild<QToolBar*>();
-    ASSERT_NE(toolbar, nullptr);
-    EXPECT_TRUE(toolbar->isVisible());
-}
-
-// ============================================================================
 // Status Bar Tests
 // ============================================================================
 
@@ -248,30 +226,126 @@ TEST_F(MainWindowTest, LightThemeHasLightBackground) {
 TEST_F(MainWindowTest, SystemThemeFollowsSystemPreference) {
     MainWindow window;
     window.setTheme(Theme::System);
-    
+
     EXPECT_EQ(window.currentTheme(), Theme::System);
-    
-    // Effective theme should be either Light or Dark
+
+    // Effective theme should be resolved to a concrete theme (not System)
     Theme effective = window.effectiveTheme();
-    EXPECT_TRUE(effective == Theme::Light || effective == Theme::Dark);
+    EXPECT_NE(effective, Theme::System);
+}
+
+TEST_F(MainWindowTest, DraculaThemeHasDarkPalette) {
+    MainWindow window;
+    window.setTheme(Theme::Dracula);
+    window.show();
+    processEvents();
+
+    EXPECT_EQ(window.effectiveTheme(), Theme::Dracula);
+
+    QPalette palette = window.palette();
+    QColor windowColor = palette.color(QPalette::Window);
+    // Dracula is a dark theme
+    EXPECT_LT(windowColor.lightnessF(), 0.5);
 }
 
 TEST_F(MainWindowTest, ThemeEmitsSignalOnChange) {
     MainWindow window;
-    
+
     bool signalReceived = false;
     Theme newTheme;
-    
+
     QObject::connect(&window, &MainWindow::themeChanged, [&](Theme theme) {
         signalReceived = true;
         newTheme = theme;
     });
-    
+
     window.setTheme(Theme::Dark);
     processEvents();
-    
+
     EXPECT_TRUE(signalReceived);
     EXPECT_EQ(newTheme, Theme::Dark);
+}
+
+// ============================================================================
+// Theme Cycling Safety Tests
+//
+// Rapidly switching through all 8 theme presets tests:
+// - No crash from stylesheet re-polishing during paint cycles
+// - AppColors cache updates correctly
+// - themeChanged signal fires for each
+// ============================================================================
+
+TEST_F(MainWindowTest, CycleAllThemesNoCrash) {
+    MainWindow window;
+    window.show();
+    processEvents();
+
+    const std::vector<Theme> allThemes = {
+        Theme::System, Theme::Light, Theme::Dark,
+        Theme::SolarizedDark, Theme::Dracula,
+        Theme::Nord, Theme::Monokai, Theme::OneDark
+    };
+
+    for (auto theme : allThemes) {
+        EXPECT_NO_THROW(window.setTheme(theme));
+        processEvents();
+        EXPECT_EQ(window.currentTheme(), theme);
+    }
+}
+
+TEST_F(MainWindowTest, RapidThemeCyclingNoCrash) {
+    // Rapidly cycle without processEvents between each — stress test
+    MainWindow window;
+    window.show();
+    processEvents();
+
+    for (int round = 0; round < 3; ++round) {
+        window.setTheme(Theme::Dark);
+        window.setTheme(Theme::Light);
+        window.setTheme(Theme::Dracula);
+        window.setTheme(Theme::Nord);
+        window.setTheme(Theme::OneDark);
+        window.setTheme(Theme::Monokai);
+        window.setTheme(Theme::SolarizedDark);
+        window.setTheme(Theme::System);
+    }
+    processEvents();
+    SUCCEED();
+}
+
+TEST_F(MainWindowTest, AllDarkThemesHaveDarkPalette) {
+    MainWindow window;
+    window.show();
+
+    const std::vector<Theme> darkThemes = {
+        Theme::Dark, Theme::SolarizedDark, Theme::Dracula,
+        Theme::Nord, Theme::Monokai, Theme::OneDark
+    };
+
+    for (auto theme : darkThemes) {
+        window.setTheme(theme);
+        processEvents();
+
+        QPalette pal = window.palette();
+        QColor bg = pal.color(QPalette::Window);
+        EXPECT_LT(bg.lightnessF(), 0.5)
+            << "Theme " << static_cast<int>(theme) << " should have dark background";
+    }
+}
+
+TEST_F(MainWindowTest, ThemeSignalCountMatchesChanges) {
+    MainWindow window;
+    int signalCount = 0;
+    QObject::connect(&window, &MainWindow::themeChanged, [&](Theme) {
+        signalCount++;
+    });
+
+    window.setTheme(Theme::Dark);
+    window.setTheme(Theme::Light);
+    window.setTheme(Theme::Dracula);
+    processEvents();
+
+    EXPECT_EQ(signalCount, 3);
 }
 
 // ============================================================================
@@ -402,13 +476,6 @@ TEST_F(MainWindowTest, MinimumSizeAccountsForScaling) {
 // Component Access Tests
 // ============================================================================
 
-TEST_F(MainWindowTest, ProvidesToolbarAccess) {
-    MainWindow window;
-    
-    QToolBar* toolbar = window.mainToolbar();
-    EXPECT_NE(toolbar, nullptr);
-}
-
 TEST_F(MainWindowTest, ProvidesStatusBarAccess) {
     MainWindow window;
     
@@ -462,6 +529,41 @@ TEST_F(MainWindowTest, CanToggleStatusBarVisibility) {
     window.setStatusBarVisible(true);
     processEvents();
     EXPECT_TRUE(statusBar->isVisible());
+}
+
+// ============================================================================
+// Sidebar Toggle Tests
+// ============================================================================
+
+TEST_F(MainWindowTest, ToggleSidebarCollapsesAndRestores) {
+    MainWindow window;
+    window.show();
+    processEvents();
+
+    QWidget* sidebar = window.sidebarWidget();
+    ASSERT_NE(sidebar, nullptr);
+
+    QSplitter* splitter = window.findChild<QSplitter*>();
+    ASSERT_NE(splitter, nullptr);
+
+    // Remember original sidebar width
+    QList<int> originalSizes = splitter->sizes();
+    ASSERT_GE(originalSizes.size(), 2);
+    EXPECT_GT(originalSizes[0], 0);
+
+    // Collapse
+    window.toggleSidebar();
+    processEvents();
+    EXPECT_EQ(sidebar->maximumWidth(), 0);
+
+    // Expand
+    window.toggleSidebar();
+    processEvents();
+    EXPECT_GT(sidebar->maximumWidth(), 0);
+
+    // After restoring, sizes should approximate the originals
+    QList<int> restoredSizes = splitter->sizes();
+    EXPECT_NEAR(restoredSizes[0], originalSizes[0], 10);
 }
 
 } // namespace test

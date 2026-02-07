@@ -287,14 +287,14 @@ public:
     void setViewportSize(int width, int height, float dpr) {
         m_viewportWidth = width;
         m_viewportHeight = height;
-        m_devicePixelRatio = dpr;
-        
-        if (m_fontAtlas) {
+
+        if (m_fontAtlas && std::abs(m_devicePixelRatio - dpr) > 0.01f) {
             m_fontAtlas->updateScale(dpr);
             m_lineHeight = m_fontAtlas->lineHeight();
             m_monoAdvance = m_fontAtlas->monoAdvance();
         }
-        
+        m_devicePixelRatio = dpr;
+
         invalidateCache();
     }
     
@@ -957,8 +957,8 @@ private:
                 float badgeWidth = textWidth + badgePadX * 2.0f;
                 float badgeX = badgeRightEdge - badgeWidth;
                 float badgeHeight = m_lineHeight * 0.7f;
-                float badgeY = headerY + (DiffRenderer::kHeaderHeight - badgeHeight) / 2.0f;
-                
+                float badgeY = headerY + (DiffRenderer::kHeaderHeight * 0.5f) - (badgeHeight / 2.0f);
+
                 // Badge background
                 DiffRectInstance badgeBg;
                 badgeBg.originX = badgeX;
@@ -976,7 +976,7 @@ private:
                 
                 // Badge text
                 float textX = badgeX + badgePadX;
-                float textBaselineY = badgeY + badgeHeight * 0.72f;
+                float textBaselineY = headerBaselineY;
                 for (char c : removedStr) {
                     const auto* glyph = m_fontAtlas->getASCIIGlyph(c);
                     if (!glyph) { textX += m_monoAdvance; continue; }
@@ -1008,8 +1008,8 @@ private:
                 float badgeWidth = textWidth + badgePadX * 2.0f;
                 float badgeX = badgeRightEdge - badgeWidth;
                 float badgeHeight = m_lineHeight * 0.7f;
-                float badgeY = headerY + (DiffRenderer::kHeaderHeight - badgeHeight) / 2.0f;
-                
+                float badgeY = headerY + (DiffRenderer::kHeaderHeight * 0.5f) - (badgeHeight / 2.0f);
+
                 // Badge background
                 DiffRectInstance badgeBg;
                 badgeBg.originX = badgeX;
@@ -1027,7 +1027,7 @@ private:
                 
                 // Badge text
                 float textX = badgeX + badgePadX;
-                float textBaselineY = badgeY + badgeHeight * 0.72f;
+                float textBaselineY = headerBaselineY;
                 for (char c : addedStr) {
                     const auto* glyph = m_fontAtlas->getASCIIGlyph(c);
                     if (!glyph) { textX += m_monoAdvance; continue; }

@@ -16,6 +16,7 @@
 #include <QContextMenuEvent>
 #include <QTimer>
 #include <QElapsedTimer>
+#include <QScrollBar>
 
 #include <memory>
 #include <vector>
@@ -37,6 +38,9 @@ public:
 
     // Adaptive memory management
     void releaseResources();
+
+    // Theme support — call when app theme changes
+    void updateDarkMode(bool isDark);
 
 signals:
     void openglFailed(const QString& reason);
@@ -128,6 +132,9 @@ private:
     void renderUnderwaterScene();
     void startUnderwaterAnimation();
     void stopUnderwaterAnimation();
+    void updateScrollBar();
+
+    QScrollBar* m_scrollBar = nullptr;
 };
 
 } // namespace jules

@@ -33,91 +33,7 @@ const QMap<SessionState, QString> STATE_DISPLAY_TEXTS = {
     {SessionState::AwaitingPlanApproval, "Review Plan"}
 };
 
-// Helper widget for individual plan step with collapsible description
-class PlanStepWidget : public QWidget {
-public:
-    PlanStepWidget(const PlanStep& step, bool isDark, QWidget* parent = nullptr)
-        : QWidget(parent)
-        , m_expanded(false)
-        , m_descriptionWidget(nullptr)
-    {
-        auto* layout = new QVBoxLayout(this);
-        layout->setContentsMargins(0, 0, 0, 0);
-        layout->setSpacing(0);
-
-        // Header row: dot + title + chevron
-        auto* headerWidget = new QWidget(this);
-        headerWidget->setCursor(Qt::PointingHandCursor);
-        auto* headerLayout = new QHBoxLayout(headerWidget);
-        headerLayout->setContentsMargins(8, 4, 8, 4);
-        headerLayout->setSpacing(8);
-
-        // Purple accent dot
-        auto* dotLabel = new QLabel(this);
-        dotLabel->setFixedSize(6, 6);
-        QColor accentColor = AppColors::accent(isDark);
-        dotLabel->setStyleSheet(QString(
-            "background-color: %1; border-radius: 3px;")
-            .arg(accentColor.name()));
-
-        // Step title
-        auto* titleLabel = new QLabel(step.title.value_or("Untitled Step"), this);
-        titleLabel->setWordWrap(false);
-        QFont titleFont = titleLabel->font();
-        titleFont.setPointSize(12);
-        titleLabel->setFont(titleFont);
-        titleLabel->setStyleSheet(QString("color: %1;").arg(AppColors::textPrimary(isDark).name()));
-
-        // Chevron indicator
-        m_chevronLabel = new QLabel(this);
-        m_chevronLabel->setText("▼");
-        m_chevronLabel->setStyleSheet(QString("color: %1; font-size: 8px;").arg(AppColors::textSecondary(isDark).name()));
-
-        headerLayout->addWidget(dotLabel);
-        headerLayout->addWidget(titleLabel, 1);
-        headerLayout->addWidget(m_chevronLabel);
-
-        layout->addWidget(headerWidget);
-
-        // Description (hidden by default)
-        if (step.description.has_value() && !step.description->isEmpty()) {
-            m_descriptionWidget = new QLabel(step.description.value(), this);
-            m_descriptionWidget->setWordWrap(true);
-            m_descriptionWidget->setContentsMargins(24, 8, 8, 8);  // Indent to align with title
-            QFont descFont = m_descriptionWidget->font();
-            descFont.setPointSize(11);
-            m_descriptionWidget->setFont(descFont);
-            m_descriptionWidget->setStyleSheet(QString("color: %1;").arg(AppColors::textSecondary(isDark).name()));
-            m_descriptionWidget->hide();
-            layout->addWidget(m_descriptionWidget);
-        }
-
-        // Click handler on header
-        headerWidget->installEventFilter(this);
-    }
-
-protected:
-    bool eventFilter(QObject* obj, QEvent* event) override {
-        if (event->type() == QEvent::MouseButtonRelease) {
-            toggleExpanded();
-            return true;
-        }
-        return QWidget::eventFilter(obj, event);
-    }
-
-private:
-    void toggleExpanded() {
-        m_expanded = !m_expanded;
-        m_chevronLabel->setText(m_expanded ? "▲" : "▼");
-        if (m_descriptionWidget) {
-            m_descriptionWidget->setVisible(m_expanded);
-        }
-    }
-
-    bool m_expanded;
-    QLabel* m_chevronLabel;
-    QLabel* m_descriptionWidget;
-};
+// (PlanStepWidget removed — plan steps rendered as simple HTML bullet list)
 
 }
 
@@ -159,7 +75,7 @@ void SessionDetailWidget::setupUi() {
 
     // === Fixed Header Bar (above scroll area) ===
     m_headerBar = new QWidget(this);
-    m_headerBar->setFixedHeight(56);
+    m_headerBar->setFixedHeight(72);
 
     auto* headerBarLayout = new QHBoxLayout(m_headerBar);
     headerBarLayout->setContentsMargins(16, 10, 16, 10);
@@ -172,16 +88,19 @@ void SessionDetailWidget::setupUi() {
 
     m_titleLabel = new QLabel(m_headerBar);
     QFont titleFont = m_titleLabel->font();
-    titleFont.setPointSize(13);
-    titleFont.setWeight(QFont::Medium);
+    titleFont.setPointSize(16);
+    titleFont.setWeight(QFont::Normal);
     m_titleLabel->setFont(titleFont);
     m_titleLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     m_subtitleLabel = new QLabel(m_headerBar);
     QFont subtitleFont = m_subtitleLabel->font();
-    subtitleFont.setPointSize(11);
+    subtitleFont.setPointSize(12);
     m_subtitleLabel->setFont(subtitleFont);
     m_subtitleLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_subtitleLabel->setTextFormat(Qt::RichText);
+    m_subtitleLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    m_subtitleLabel->setOpenExternalLinks(true);
 
     leftVBox->addWidget(m_titleLabel);
     leftVBox->addWidget(m_subtitleLabel);
@@ -190,20 +109,45 @@ void SessionDetailWidget::setupUi() {
     auto* rightVBox = new QVBoxLayout();
     rightVBox->setContentsMargins(0, 0, 0, 0);
     rightVBox->setSpacing(2);
-    rightVBox->setAlignment(Qt::AlignTop | Qt::AlignRight);
+    rightVBox->setAlignment(Qt::AlignVCenter | Qt::AlignRight);
+
+    m_pullRequestBtn = new QPushButton("View PR", m_headerBar);
+    m_pullRequestBtn->setFixedHeight(28);
+    m_pullRequestBtn->hide();
+    m_pullRequestBtn->setCursor(Qt::PointingHandCursor);
+    connect(m_pullRequestBtn, &QPushButton::clicked, [this]() {
+        QString prUrl = pullRequestUrl();
+        if (!prUrl.isEmpty()) {
+            emit openUrlRequested(prUrl);
+        }
+    });
 
     m_stateLabel = new QLabel(m_headerBar);
-    m_stateLabel->setFixedHeight(24);
+    m_stateLabel->setFixedHeight(28);
     m_stateLabel->setAlignment(Qt::AlignRight);
 
     m_timeAgoLabel = new QLabel(m_headerBar);
     QFont timeFont = m_timeAgoLabel->font();
     timeFont.setPointSize(11);
     m_timeAgoLabel->setFont(timeFont);
-    m_timeAgoLabel->setAlignment(Qt::AlignRight);
+    m_timeAgoLabel->setFixedHeight(28);
+    m_timeAgoLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
-    rightVBox->addWidget(m_stateLabel);
-    rightVBox->addWidget(m_timeAgoLabel);
+    auto* rightTopRow = new QHBoxLayout();
+    rightTopRow->setSpacing(8);
+    m_diffToggleBtn = new QPushButton(m_headerBar);
+    m_diffToggleBtn->setFixedSize(28, 28);
+    m_diffToggleBtn->setCursor(Qt::PointingHandCursor);
+    m_diffToggleBtn->setToolTip("Toggle Diff Panel");
+    m_diffToggleBtn->setText(QString::fromUtf8("\u00BB")); // » chevron = diff visible
+    connect(m_diffToggleBtn, &QPushButton::clicked, this, &SessionDetailWidget::toggleDiffPanel);
+
+    rightTopRow->addWidget(m_pullRequestBtn);
+    rightTopRow->addWidget(m_stateLabel);
+    rightTopRow->addWidget(m_timeAgoLabel);
+    rightTopRow->addWidget(m_diffToggleBtn);
+
+    rightVBox->addLayout(rightTopRow);
 
     headerBarLayout->addLayout(leftVBox, 1);
     headerBarLayout->addLayout(rightVBox);
@@ -216,8 +160,10 @@ void SessionDetailWidget::setupUi() {
 
     m_approveButton = new QPushButton("Approve Plan", m_actionBar);
     m_approveButton->setObjectName("approveButton");
+    m_approveButton->setCursor(Qt::PointingHandCursor);
     m_feedbackButton = new QPushButton("Provide Feedback", m_actionBar);
     m_feedbackButton->setObjectName("feedbackButton");
+    m_feedbackButton->setCursor(Qt::PointingHandCursor);
 
     actionLayout->addStretch();
     actionLayout->addWidget(m_approveButton);
@@ -282,20 +228,11 @@ void SessionDetailWidget::setupUi() {
             background-color: rgba(128, 128, 128, 0.2);
         }
     )");
+    m_openBrowserBtn->setCursor(Qt::PointingHandCursor);
     connect(m_openBrowserBtn, &QPushButton::clicked,
             this, &SessionDetailWidget::requestOpenInBrowser);
 
-    m_pullRequestBtn = new QPushButton("View Pull Request", m_contentWidget);
-    m_pullRequestBtn->hide();
-    connect(m_pullRequestBtn, &QPushButton::clicked, [this]() {
-        QString prUrl = pullRequestUrl();
-        if (!prUrl.isEmpty()) {
-            emit openUrlRequested(prUrl);
-        }
-    });
-
     buttonRow->addWidget(m_openBrowserBtn);
-    buttonRow->addWidget(m_pullRequestBtn);
     buttonRow->addStretch();
 
     // Assemble content layout (activities + buttons)
@@ -305,15 +242,24 @@ void SessionDetailWidget::setupUi() {
 
     // Create diff panel
     m_diffPanel = new DiffPanelWidget(this);
-    m_diffPanel->setMinimumWidth(300);
+    m_diffPanel->setMinimumWidth(0);
 
     // Create horizontal splitter: activities on left, diffs on right
     m_mainSplitter = new QSplitter(Qt::Horizontal, this);
+
+    // Wrap diff panel in opaque container to prevent transparency bleed
+    auto* diffContainer = new QWidget(this);
+    diffContainer->setAutoFillBackground(true);
+    auto* diffContainerLayout = new QVBoxLayout(diffContainer);
+    diffContainerLayout->setContentsMargins(0, 0, 0, 0);
+    diffContainerLayout->setSpacing(0);
+    diffContainerLayout->addWidget(m_diffPanel);
+
     m_mainSplitter->addWidget(scrollArea);
-    m_mainSplitter->addWidget(m_diffPanel);
-    m_mainSplitter->setStretchFactor(0, 2);  // Activities get 2/5 space
-    m_mainSplitter->setStretchFactor(1, 3);  // Diffs get 3/5 space
-    m_mainSplitter->setChildrenCollapsible(false);
+    m_mainSplitter->addWidget(diffContainer);
+    m_mainSplitter->setStretchFactor(0, 2);
+    m_mainSplitter->setStretchFactor(1, 3);
+    m_mainSplitter->setSizes(QList<int>() << 400 << 600);
 
     // Assemble main layout:
     //   headerBar (fixed) → actionBar → splitter (scrollable activities + diff)
@@ -513,6 +459,33 @@ void SessionDetailWidget::requestOpenInBrowser() {
     }
 }
 
+void SessionDetailWidget::toggleDiffPanel() {
+    if (!m_mainSplitter) return;
+
+    m_diffCollapsed = !m_diffCollapsed;
+
+    if (m_diffCollapsed) {
+        // Save current sizes before collapsing
+        m_savedDiffSplitterSizes = m_mainSplitter->sizes();
+        // Collapse diff panel (index 1) to 0
+        QList<int> collapsed;
+        int total = m_savedDiffSplitterSizes[0] + m_savedDiffSplitterSizes[1];
+        collapsed << total << 0;
+        m_mainSplitter->setSizes(collapsed);
+        m_diffToggleBtn->setText(QString::fromUtf8("\u00AB")); // « = diff hidden, click to show
+        m_diffToggleBtn->setToolTip("Show Diff Panel");
+    } else {
+        // Restore saved sizes
+        if (!m_savedDiffSplitterSizes.isEmpty() && m_savedDiffSplitterSizes.size() == 2) {
+            m_mainSplitter->setSizes(m_savedDiffSplitterSizes);
+        } else {
+            m_mainSplitter->setSizes(QList<int>() << 400 << 600);
+        }
+        m_diffToggleBtn->setText(QString::fromUtf8("\u00BB")); // » = diff visible, click to hide
+        m_diffToggleBtn->setToolTip("Hide Diff Panel");
+    }
+}
+
 QString SessionDetailWidget::formatTimeAgo(const QDateTime& created) {
     if (!created.isValid()) {
         return QString();
@@ -570,27 +543,46 @@ void SessionDetailWidget::updateDisplay() {
     QFontMetrics fm(m_titleLabel->font());
     m_titleLabel->setStyleSheet(QString("color: %1; border: none;").arg(AppColors::textPrimary(isDark).name()));
 
-    // Subtitle: repo · branch · git stats
-    QStringList subtitleParts;
+    // Subtitle: repo(link) · branch · +N(green) -M(red)
+    QColor secondaryColor = AppColors::textSecondary(isDark);
+    QColor addedColor = AppColors::linesAdded(isDark);
+    QColor removedColor = AppColors::linesRemoved(isDark);
+    QString sep = QString(" <span style='color:%1;'>&middot;</span> ").arg(secondaryColor.name());
+
+    QStringList htmlParts;
+
+    // Repo as hyperlink
     if (session.sourceContext.has_value()) {
         QString source = session.sourceContext->source;
         source = source.replace("sources/github/", "");
-        subtitleParts.append(source);
+        QString repoUrl = QString("https://github.com/%1").arg(source);
+        htmlParts.append(QString("<a href='%1' style='color:%2; text-decoration:none;'>%3</a>")
+            .arg(repoUrl).arg(AppColors::accent(isDark).name()).arg(source.toHtmlEscaped()));
 
         if (session.sourceContext->githubRepoContext.has_value() &&
             session.sourceContext->githubRepoContext->startingBranch.has_value()) {
-            subtitleParts.append(session.sourceContext->githubRepoContext->startingBranch.value());
+            htmlParts.append(QString("<span style='color:%1;'>%2</span>")
+                .arg(secondaryColor.name())
+                .arg(session.sourceContext->githubRepoContext->startingBranch.value().toHtmlEscaped()));
         }
     }
 
+    // Colored git stats
     QString gitStats = session.gitStatsSummary();
     if (!gitStats.isEmpty()) {
-        subtitleParts.append(gitStats);
+        QString statsHtml;
+        for (const QString& comp : gitStats.split(' ')) {
+            if (comp.startsWith('+')) {
+                statsHtml += QString("<span style='color:%1;'>%2</span> ").arg(addedColor.name()).arg(comp.toHtmlEscaped());
+            } else if (comp.startsWith('-')) {
+                statsHtml += QString("<span style='color:%1;'>%2</span> ").arg(removedColor.name()).arg(comp.toHtmlEscaped());
+            }
+        }
+        htmlParts.append(statsHtml.trimmed());
     }
 
-    QColor secondaryColor = AppColors::textSecondary(isDark);
-    if (!subtitleParts.isEmpty()) {
-        m_subtitleLabel->setText(subtitleParts.join(" · "));
+    if (!htmlParts.isEmpty()) {
+        m_subtitleLabel->setText(htmlParts.join(sep));
         m_subtitleLabel->setStyleSheet(QString("color: %1; border: none;").arg(secondaryColor.name()));
         m_subtitleLabel->show();
     } else {
@@ -605,7 +597,7 @@ void SessionDetailWidget::updateDisplay() {
     QColor stateColor = stateToColor(session.state);
     m_stateLabel->setStyleSheet(QString(
         "background-color: %1; color: white; "
-        "padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 500; border: none;")
+        "padding: 6px 14px; border-radius: 12px; font-size: 11px; font-weight: 500; border: none;")
         .arg(stateColor.name()));
 
     // Time-ago label
@@ -630,15 +622,21 @@ void SessionDetailWidget::updateDisplay() {
     if (hasPR) {
         QColor prColor = AppColors::running(isDark);
         m_pullRequestBtn->setStyleSheet(QString(
-            "QPushButton {"
-            "  background-color: %1; color: white; "
-            "  padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 500; border: none;"
-            "}"
-            "QPushButton:hover { background-color: %2; }"
-            "QPushButton:pressed { background-color: %3; }")
-            .arg(prColor.name())
-            .arg(prColor.darker(110).name())
-            .arg(prColor.darker(120).name()));
+            "QPushButton { background-color: %1; color: white; padding: 6px 14px; "
+            "border-radius: 12px; font-size: 11px; font-weight: 500; border: none; }"
+            "QPushButton:hover { background-color: %2; }")
+            .arg(prColor.name()).arg(prColor.darker(110).name()));
+    }
+
+    // Diff toggle button styling
+    if (m_diffToggleBtn) {
+        QColor borderColor = AppColors::separator(isDark);
+        QColor textColor = AppColors::textSecondary(isDark);
+        m_diffToggleBtn->setStyleSheet(QString(
+            "QPushButton { background-color: transparent; color: %1; "
+            "border: 1px solid %2; border-radius: 6px; font-size: 14px; font-weight: bold; }"
+            "QPushButton:hover { background-color: rgba(128, 128, 128, 0.15); }")
+            .arg(textColor.name()).arg(borderColor.name()));
     }
 }
 
@@ -718,54 +716,105 @@ void SessionDetailWidget::populateActivities() {
         return;
     }
 
-    for (const auto& activity : m_session->activities.value()) {
+    // Find the latest progressUpdated activity ID (Mac app skips only this one,
+    // showing it as a live indicator instead; earlier progress activities render inline)
+    const auto& allActivities = m_session->activities.value();
+    QString latestProgressId;
+    for (auto it = allActivities.rbegin(); it != allActivities.rend(); ++it) {
+        if (it->progressUpdated.has_value()) {
+            latestProgressId = it->id;
+            break;
+        }
+    }
+
+    for (const auto& activity : allActivities) {
         // Special handling for plan generated activities
         if (activity.planGenerated.has_value()) {
-            // Create plan widget container - full width, left-aligned
+            // Build a single HTML bullet list from plan steps
+            const auto& steps = activity.planGenerated->plan.steps;
+            QString html;
+            html += QString("<b style='font-size: 13px;'>Created Plan</b><br><ul style='margin: 4px 0; padding-left: 20px;'>");
+            for (const auto& step : steps) {
+                QString stepTitle = step.title.value_or("Untitled Step");
+                QString stepHtml = markdownToHtml(stepTitle, isDark);
+                html += QString("<li style='margin: 2px 0;'>%1</li>").arg(stepHtml);
+            }
+            html += "</ul>";
+
             auto* planContainer = new QWidget();
             auto* planOuterLayout = new QHBoxLayout(planContainer);
             planOuterLayout->setContentsMargins(0, 6, 0, 6);
 
-            auto* planWidget = new QWidget();
-            auto* planLayout = new QVBoxLayout(planWidget);
-            planLayout->setContentsMargins(0, 0, 0, 0);
-            planLayout->setSpacing(8);
+            auto* planLabel = new QLabel(planContainer);
+            planLabel->setTextFormat(Qt::RichText);
+            planLabel->setWordWrap(true);
+            planLabel->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::LinksAccessibleByMouse);
+            planLabel->setOpenExternalLinks(true);
+            planLabel->setText(html);
 
-            // "Created Plan" header (bold)
-            auto* headerLabel = new QLabel("Created Plan", planWidget);
-            QFont headerFont = headerLabel->font();
-            headerFont.setPointSize(13);
-            headerFont.setWeight(QFont::DemiBold);
-            headerLabel->setFont(headerFont);
-            headerLabel->setStyleSheet(QString("color: %1;").arg(AppColors::textPrimary(isDark).name()));
-            planLayout->addWidget(headerLabel);
+            QColor bubbleBg = AppColors::backgroundSecondary(isDark);
+            QColor bubbleText = AppColors::textPrimary(isDark);
+            QColor borderColor = AppColors::separator(isDark);
+            borderColor.setAlphaF(0.5);
 
-            // Steps container with border
-            auto* stepsContainer = new QWidget(planWidget);
-            auto* stepsLayout = new QVBoxLayout(stepsContainer);
-            stepsLayout->setContentsMargins(12, 12, 12, 12);
-            stepsLayout->setSpacing(4);
+            planLabel->setStyleSheet(QString(
+                "background-color: %1; color: %2; "
+                "padding: 14px 18px; border-radius: 16px; font-size: 13px; "
+                "border: 1px solid %3;")
+                .arg(bubbleBg.name())
+                .arg(bubbleText.name())
+                .arg(borderColor.name(QColor::HexArgb)));
 
-            // Add each plan step
-            const auto& steps = activity.planGenerated->plan.steps;
-            for (const auto& step : steps) {
-                auto* stepWidget = new PlanStepWidget(step, isDark, stepsContainer);
-                stepsLayout->addWidget(stepWidget);
-            }
-
-            // Border styling for steps container
-            QColor borderColor = AppColors::backgroundSecondary(isDark);
-            stepsContainer->setStyleSheet(QString(
-                "QWidget { background: transparent; border: 1px solid %1; border-radius: 12px; }")
-                .arg(borderColor.name()));
-
-            planLayout->addWidget(stepsContainer);
-
-            // Left-aligned, full width (no max width)
-            planOuterLayout->addWidget(planWidget, 1);
-
+            planOuterLayout->addWidget(planLabel, 1);
             m_activityLayout->addWidget(planContainer);
             continue;
+        }
+
+        // Styled completion/failure banners
+        if (activity.sessionCompleted.has_value() || activity.sessionFailed.has_value()) {
+            bool isCompleted = activity.sessionCompleted.has_value();
+            QString bannerText = isCompleted
+                ? "Session completed"
+                : QString("Session failed: %1").arg(
+                    activity.sessionFailed->reason.value_or("Unknown error"));
+
+            QColor bannerBg = isCompleted
+                ? QColor(0, 200, 83, 38)   // green 15% alpha
+                : QColor(255, 59, 48, 38);  // red 15% alpha
+            QColor bannerTextColor = isCompleted
+                ? QColor(0, 200, 83)
+                : QColor(255, 59, 48);
+
+            auto* bannerWidget = new QWidget();
+            auto* bannerLayout = new QHBoxLayout(bannerWidget);
+            bannerLayout->setContentsMargins(0, 8, 0, 8);
+
+            auto* bannerLabel = new QLabel(bannerText, bannerWidget);
+            bannerLabel->setAlignment(Qt::AlignCenter);
+            bannerLabel->setWordWrap(true);
+            bannerLabel->setStyleSheet(QString(
+                "background-color: %1; color: %2; "
+                "padding: 12px 20px; border-radius: 12px; font-size: 13px; font-weight: 500;")
+                .arg(bannerBg.name(QColor::HexArgb))
+                .arg(bannerTextColor.name()));
+
+            bannerLayout->addWidget(bannerLabel, 1);
+            m_activityLayout->addWidget(bannerWidget);
+            continue;
+        }
+
+        // Skip the latest progress activity (Mac app shows it as a live indicator).
+        // Older progress activities with descriptions are rendered inline.
+        if (activity.progressUpdated.has_value()) {
+            if (activity.id == latestProgressId) {
+                continue;  // Skip the live/latest one
+            }
+            // Skip progress activities with no meaningful description
+            QString desc = activity.generatedDescription.value_or(
+                activity.progressUpdated->description.value_or(""));
+            if (desc.isEmpty()) {
+                continue;
+            }
         }
 
         QString text = formatActivityText(activity);
@@ -775,7 +824,7 @@ void SessionDetailWidget::populateActivities() {
             auto* itemLayout = new QHBoxLayout(itemWidget);
             itemLayout->setContentsMargins(0, 6, 0, 6);
 
-            bool isUser = (activity.originator == "USER");
+            bool isUser = activity.userMessaged.has_value();
 
             // Container for bubble + optional Read More button
             auto* bubbleContainer = new QWidget();
@@ -828,6 +877,36 @@ void SessionDetailWidget::populateActivities() {
                 .arg(paddingH)
                 .arg(borderRadius)
                 .arg(borderColor.name(QColor::HexArgb)));
+
+            // Activity title badge for agent messages (prefer generatedTitle > title > progressUpdated title)
+            if (!isUser) {
+                QString badgeText;
+                if (activity.generatedTitle.has_value() && !activity.generatedTitle->isEmpty()) {
+                    badgeText = activity.generatedTitle.value();
+                } else if (activity.title.has_value() && !activity.title->isEmpty()) {
+                    badgeText = activity.title.value();
+                } else if (activity.progressUpdated.has_value() &&
+                           activity.progressUpdated->title.has_value() &&
+                           !activity.progressUpdated->title->isEmpty()) {
+                    badgeText = activity.progressUpdated->title.value();
+                }
+                if (!badgeText.isEmpty()) {
+                    auto* titleBadge = new QLabel(badgeText);
+                    titleBadge->setWordWrap(false);
+                    QFont badgeFont = titleBadge->font();
+                    badgeFont.setPointSize(10);
+                    titleBadge->setFont(badgeFont);
+                    titleBadge->setStyleSheet(QString(
+                        "background-color: %1; color: %2; padding: 3px 8px; "
+                        "border-radius: 4px; font-size: 10px;")
+                        .arg(AppColors::backgroundDark(isDark).name())
+                        .arg(AppColors::textSecondary(isDark).name()));
+                    titleBadge->setMaximumWidth(static_cast<int>(width() * 0.7));
+                    QFontMetrics badgeFm(badgeFont);
+                    titleBadge->setText(badgeFm.elidedText(badgeText, Qt::ElideRight, titleBadge->maximumWidth()));
+                    bubbleVLayout->addWidget(titleBadge);
+                }
+            }
 
             bubbleVLayout->addWidget(bubble);
 
@@ -895,12 +974,9 @@ QString SessionDetailWidget::formatActivityText(const Activity& activity) const 
     } else if (activity.agentMessaged.has_value()) {
         text = activity.agentMessaged->agentMessage;
     } else if (activity.progressUpdated.has_value()) {
-        QString title = activity.progressUpdated->title.value_or("Working");
-        QString desc = activity.progressUpdated->description.value_or("");
-        text = QString("⏳ %1").arg(title);
-        if (!desc.isEmpty() && desc.length() < 100) {
-            text += QString("\n%1").arg(desc);
-        }
+        // Prefer generatedDescription over original description (matches Mac app)
+        text = activity.generatedDescription.value_or(
+            activity.progressUpdated->description.value_or(""));
     } else if (activity.planGenerated.has_value()) {
         text = QString("📋 Plan generated with %1 steps")
                    .arg(activity.planGenerated->plan.steps.size());
@@ -932,6 +1008,7 @@ QColor SessionDetailWidget::stateToColor(SessionState state) const {
 
 QString SessionDetailWidget::markdownToHtml(const QString& markdown, bool isDark) const {
     QString codeBg = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+    QString accentLightColor = AppColors::accentLight(isDark).name();
     QString textColor = AppColors::textPrimary(isDark).name();
     QString secondaryColor = AppColors::textSecondary(isDark).name();
     QString accentColor = AppColors::accent(isDark).name();
@@ -953,8 +1030,8 @@ QString SessionDetailWidget::markdownToHtml(const QString& markdown, bool isDark
             } else {
                 // End of code block - emit as <pre>
                 QString codeContent = codeBlockLines.join('\n').toHtmlEscaped();
-                resultLines.append(QString("<pre style='background-color: %1; padding: 8px; border-radius: 4px; font-family: monospace;'>%2</pre>")
-                    .arg(codeBg, codeContent));
+                resultLines.append(QString("<pre style='background-color: %1; color: %2; padding: 8px; border-radius: 4px; font-family: monospace;'>%3</pre>")
+                    .arg(codeBg, accentLightColor, codeContent));
                 inCodeBlock = false;
                 continue;
             }
@@ -1033,7 +1110,7 @@ QString SessionDetailWidget::markdownToHtml(const QString& markdown, bool isDark
 
         // Inline code
         static QRegularExpression inlineCodeRe(R"(`([^`]+)`)");
-        lastLine.replace(inlineCodeRe, QString("<code style='background-color: %1; padding: 2px 4px; border-radius: 2px; font-family: monospace;'>\\1</code>").arg(codeBg));
+        lastLine.replace(inlineCodeRe, QString("<code style='background-color: %1; color: %2; padding: 2px 4px; border-radius: 2px; font-family: monospace;'>\\1</code>").arg(codeBg).arg(accentLightColor));
 
         // Links [text](url)
         static QRegularExpression linkRe(R"(\[([^\]]+)\]\(([^\)]+)\))");
@@ -1055,26 +1132,26 @@ QString SessionDetailWidget::markdownToHtml(const QString& markdown, bool isDark
     // Handle unclosed code block
     if (inCodeBlock && !codeBlockLines.isEmpty()) {
         QString codeContent = codeBlockLines.join('\n').toHtmlEscaped();
-        resultLines.append(QString("<pre style='background-color: %1; padding: 8px; border-radius: 4px; font-family: monospace;'>%2</pre>")
-            .arg(codeBg, codeContent));
+        resultLines.append(QString("<pre style='background-color: %1; color: %2; padding: 8px; border-radius: 4px; font-family: monospace;'>%3</pre>")
+            .arg(codeBg, accentLightColor, codeContent));
     }
 
     return resultLines.join("<br>");
 }
 
 bool SessionDetailWidget::isTruncatable(const QString& text) const {
-    // Truncate if text is longer than 225 chars OR has 5+ newlines
-    return text.length() > 225 || text.count('\n') >= 5;
+    // Truncate if text is longer than 800 chars OR has 15+ newlines
+    return text.length() > 800 || text.count('\n') >= 15;
 }
 
 QString SessionDetailWidget::truncateText(const QString& text, int maxLines) const {
     QStringList lines = text.split('\n');
     if (lines.size() <= maxLines) {
         // Check character limit
-        if (text.length() <= 225) {
+        if (text.length() <= 800) {
             return text;
         }
-        return text.left(222) + "...";
+        return text.left(797) + "...";
     }
 
     // Take first maxLines and add ellipsis

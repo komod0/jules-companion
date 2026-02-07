@@ -1,4 +1,5 @@
 #include "ui/diff_panel_widget.h"
+#include "ui/app_colors.h"
 #include "data/settings_manager.h"
 
 #include <QFile>
@@ -63,6 +64,8 @@ DiffPanelWidget::DiffPanelWidget(QWidget* parent)
 
     // Prevent Qt from compositing this widget with transparency
     setAttribute(Qt::WA_OpaquePaintEvent);
+    setAttribute(Qt::WA_NoSystemBackground);
+    setAutoFillBackground(false);
 
     // Enable mouse tracking for selection support
     setMouseTracking(true);
@@ -71,7 +74,25 @@ DiffPanelWidget::DiffPanelWidget(QWidget* parent)
     // Set size policy to expand
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setMinimumSize(200, 200);
-    
+
+    // Overlay scrollbar
+    m_scrollBar = new QScrollBar(Qt::Vertical, this);
+    m_scrollBar->setMinimum(0);
+    m_scrollBar->setValue(0);
+    m_scrollBar->setSingleStep(40);
+    m_scrollBar->setPageStep(400);
+    m_scrollBar->setStyleSheet(R"(
+        QScrollBar:vertical { width: 10px; background: transparent; border: none; }
+        QScrollBar::handle:vertical { background: rgba(128, 128, 128, 100); border-radius: 5px; min-height: 30px; }
+        QScrollBar::handle:vertical:hover { background: rgba(128, 128, 128, 160); }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+    )");
+    connect(m_scrollBar, &QScrollBar::valueChanged, this, [this](int value) {
+        m_scrollOffset = static_cast<float>(value);
+        update();
+    });
+
     qDebug() << "[DiffPanelWidget] Constructor called";
 }
 
@@ -114,6 +135,17 @@ void DiffPanelWidget::releaseResources() {
     }
 
     qDebug() << "[DiffPanelWidget] Resources released for memory savings";
+}
+
+void DiffPanelWidget::updateDarkMode(bool isDark) {
+    if (isDark == m_isDark) return;
+    m_isDark = isDark;
+    if (m_diffRenderer) {
+        makeCurrent();
+        m_diffRenderer->setDarkMode(isDark);
+        doneCurrent();
+    }
+    update();
 }
 
 void DiffPanelWidget::setLoading(bool loading) {
@@ -342,6 +374,8 @@ void DiffPanelWidget::setDiffs(const QList<CachedDiff>& diffs) {
     if (m_diffRenderer) {
         qDebug() << "[DiffPanelWidget::setDiffs] Passing" << sections.size() << "sections to renderer";
         m_diffRenderer->setDiffSections(sections);
+        m_scrollOffset = 0.0f;
+        updateScrollBar();
         update(); // Trigger repaint
     } else {
         // Store for later when renderer is initialized
@@ -405,6 +439,7 @@ void DiffPanelWidget::initializeGL() {
             qDebug() << "[DiffPanelWidget::initializeGL] Applying" << m_pendingDiffs.size() << "pending diffs";
             m_diffRenderer->setDiffSections(m_pendingDiffs);
             m_pendingDiffs.clear();
+            updateScrollBar();
             update();
         }
 
@@ -421,35 +456,35 @@ void DiffPanelWidget::initializeGL() {
 }
 
 void DiffPanelWidget::resizeGL(int w, int h) {
-    qDebug() << "[DiffPanelWidget::resizeGL] w=" << w << "h=" << h;
     m_viewportWidth = w;
     m_viewportHeight = h;
-    
+
+    if (!m_initialized) {
+        return;  // GL not ready yet — skip until initializeGL completes
+    }
+
     // Get device pixel ratio from window handle if possible, default to stored
     if (window() && window()->windowHandle()) {
         m_devicePixelRatio = window()->windowHandle()->devicePixelRatio();
     }
 
-    glViewport(0, 0, static_cast<int>(w * m_devicePixelRatio), 
+    glViewport(0, 0, static_cast<int>(w * m_devicePixelRatio),
                static_cast<int>(h * m_devicePixelRatio));
 
     if (m_diffRenderer) {
         m_diffRenderer->setViewportSize(w, h, m_devicePixelRatio);
     }
-    
-    if (m_fontAtlas) {
-        m_fontAtlas->updateScale(m_devicePixelRatio);
-    }
+
+    updateScrollBar();
 }
 
 void DiffPanelWidget::paintGL() {
+    // Use theme background for GL clear color
+    const auto& tc = AppColors::currentColors();
+    float bgR = tc.background.redF(), bgG = tc.background.greenF(), bgB = tc.background.blueF();
+
     if (m_glFailed) {
-        // Clear to background and return early - OpenGL is not usable
-        if (m_isDark) {
-            glClearColor(0.118f, 0.118f, 0.118f, 1.0f);
-        } else {
-            glClearColor(0.96f, 0.96f, 0.965f, 1.0f);
-        }
+        glClearColor(bgR, bgG, bgB, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         return;
     }
@@ -459,21 +494,7 @@ void DiffPanelWidget::paintGL() {
         m_needsReinit = false;
     }
 
-    // Detect current theme
-    bool isDark = palette().window().color().lightness() < 128;
-    if (isDark != m_isDark) {
-        m_isDark = isDark;
-        if (m_diffRenderer) {
-            m_diffRenderer->setDarkMode(isDark);
-        }
-    }
-
-    // Clear background with theme-appropriate color
-    if (m_isDark) {
-        glClearColor(0.118f, 0.118f, 0.118f, 1.0f);
-    } else {
-        glClearColor(0.96f, 0.96f, 0.965f, 1.0f);
-    }
+    glClearColor(bgR, bgG, bgB, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if (!m_initialized || !m_diffRenderer) {
@@ -580,7 +601,13 @@ void DiffPanelWidget::wheelEvent(QWheelEvent* event) {
     float maxScroll = std::max(0.0f, totalHeight - m_viewportHeight);
     
     m_scrollOffset = std::max(0.0f, std::min(m_scrollOffset, maxScroll));
-    
+
+    if (m_scrollBar) {
+        m_scrollBar->blockSignals(true);
+        m_scrollBar->setValue(static_cast<int>(m_scrollOffset));
+        m_scrollBar->blockSignals(false);
+    }
+
     update();
 }
 
@@ -810,6 +837,27 @@ void DiffPanelWidget::setupBuffers() {
     m_textInstanceBuffer.release();
     m_quadBuffer.release();
     m_textVao.release();
+}
+
+void DiffPanelWidget::updateScrollBar() {
+    if (!m_scrollBar) return;
+
+    float totalHeight = m_diffRenderer ? m_diffRenderer->totalContentHeight() : 0.0f;
+    float maxScroll = std::max(0.0f, totalHeight - m_viewportHeight);
+
+    if (maxScroll <= 0.0f) {
+        m_scrollBar->hide();
+        return;
+    }
+
+    m_scrollBar->show();
+    m_scrollBar->setGeometry(width() - 10, 0, 10, height());
+
+    m_scrollBar->blockSignals(true);
+    m_scrollBar->setMaximum(static_cast<int>(maxScroll));
+    m_scrollBar->setPageStep(m_viewportHeight);
+    m_scrollBar->setValue(static_cast<int>(m_scrollOffset));
+    m_scrollBar->blockSignals(false);
 }
 
 void DiffPanelWidget::renderLoadingSpinner() {

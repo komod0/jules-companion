@@ -181,23 +181,8 @@ void SystemTray::onActivated(QSystemTrayIcon::ActivationReason reason) {
             pos = iconRect.center();
         } else {
             // On Linux, QSystemTrayIcon::geometry() often returns (0,0,0,0).
-            // Detect panel location from the gap between full and available geometry.
-            QScreen* screen = QGuiApplication::primaryScreen();
-            QRect avail = screen->availableGeometry();
-            QRect full = screen->geometry();
-            int bottomGap = full.bottom() - avail.bottom();
-            int topGap = avail.top() - full.top();
-
-            if (bottomGap > 10) {
-                // Bottom panel: position near bottom-right
-                pos = QPoint(avail.right() - 200, avail.bottom());
-            } else if (topGap > 10) {
-                // Top panel: position near top-right
-                pos = QPoint(avail.right() - 200, avail.top());
-            } else {
-                // Fallback: bottom-right of available area
-                pos = QPoint(avail.right() - 200, avail.bottom() - 50);
-            }
+            // Use cursor position as best proxy — it's right on/near the tray icon.
+            pos = QCursor::pos();
         }
         emit popupRequested(pos);
     } else if (reason == QSystemTrayIcon::MiddleClick) {

@@ -66,6 +66,71 @@ TEST_F(DiffPanelWidgetTest, SetLoadingToggle) {
     EXPECT_TRUE(widget.isLoading());
 }
 
+// ============================================================================
+// Dark Mode / Theme Switch Safety Tests
+//
+// The theme crash (segfault) was caused by calling setDarkMode() inside
+// paintGL() during Qt's stylesheet re-polishing cycle. The fix moved theme
+// updates to updateDarkMode() which is called from a signal outside paint.
+// These tests verify updateDarkMode() is safe in all widget states.
+// ============================================================================
+
+TEST_F(DiffPanelWidgetTest, UpdateDarkModeBeforeGLInit) {
+    // Before initializeGL, updateDarkMode should be a safe no-op
+    DiffPanelWidget widget;
+    EXPECT_NO_THROW(widget.updateDarkMode(true));
+    EXPECT_NO_THROW(widget.updateDarkMode(false));
+}
+
+TEST_F(DiffPanelWidgetTest, UpdateDarkModeToggle) {
+    // Rapidly toggling dark mode should not crash
+    DiffPanelWidget widget;
+    for (int i = 0; i < 10; ++i) {
+        EXPECT_NO_THROW(widget.updateDarkMode(i % 2 == 0));
+    }
+}
+
+TEST_F(DiffPanelWidgetTest, UpdateDarkModeSameValueNoOp) {
+    // Calling with same value should be a no-op (short-circuit)
+    DiffPanelWidget widget;
+    EXPECT_NO_THROW(widget.updateDarkMode(true));
+    EXPECT_NO_THROW(widget.updateDarkMode(true));  // same value
+    EXPECT_NO_THROW(widget.updateDarkMode(false));
+    EXPECT_NO_THROW(widget.updateDarkMode(false)); // same value
+}
+
+TEST_F(DiffPanelWidgetTest, UpdateDarkModeWithDiffsLoaded) {
+    // Theme change after diffs are set should not crash
+    DiffPanelWidget widget;
+    CachedDiff diff;
+    diff.patch = "+added\n-removed\n context\n";
+    diff.filename = "test.cpp";
+    diff.language = "cpp";
+    QList<CachedDiff> diffs;
+    diffs.append(diff);
+    widget.setDiffs(diffs);
+
+    EXPECT_NO_THROW(widget.updateDarkMode(false));
+    EXPECT_NO_THROW(widget.updateDarkMode(true));
+}
+
+TEST_F(DiffPanelWidgetTest, UpdateDarkModeWhileLoading) {
+    // Theme change during loading animation should not crash
+    DiffPanelWidget widget;
+    widget.setLoading(true);
+    EXPECT_NO_THROW(widget.updateDarkMode(false));
+    EXPECT_NO_THROW(widget.updateDarkMode(true));
+    widget.setLoading(false);
+}
+
+TEST_F(DiffPanelWidgetTest, UpdateDarkModeAfterReleaseResources) {
+    // Theme change after resources released should be safe
+    DiffPanelWidget widget;
+    widget.releaseResources();
+    EXPECT_NO_THROW(widget.updateDarkMode(true));
+    EXPECT_NO_THROW(widget.updateDarkMode(false));
+}
+
 } // namespace test
 } // namespace jules
 

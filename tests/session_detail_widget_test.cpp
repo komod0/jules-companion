@@ -165,8 +165,8 @@ TEST_F(SessionDetailWidgetTest, ActivityCountWithMultipleActivities) {
     };
     widget.setSession(session);
 
-    // 1 prompt + 4 activities = 5
-    EXPECT_EQ(widget.activityCount(), 5);
+    // 1 prompt + 2 user/agent + 1 agent = 4 (progress updates are hidden)
+    EXPECT_EQ(widget.activityCount(), 4);
 }
 
 TEST_F(SessionDetailWidgetTest, ActivityCountSkipsEmptyAgentMessages) {
@@ -471,6 +471,25 @@ TEST_F(SessionDetailWidgetTest, SessionFailedActivityIsDisplayed) {
 
     // 1 prompt + 1 failed = 2
     EXPECT_EQ(widget.activityCount(), 2);
+}
+
+// ============================================================================
+// Diff panel collapse toggle
+// ============================================================================
+
+TEST_F(SessionDetailWidgetTest, DiffToggleButtonExists) {
+    SessionDetailWidget widget;
+    widget.setSession(createSession("s1", "Test"));
+
+    QList<QPushButton*> buttons = widget.findChildren<QPushButton*>();
+    bool hasToggle = false;
+    for (auto* btn : buttons) {
+        if (btn->toolTip() == "Hide Diff Panel" || btn->toolTip() == "Toggle Diff Panel") {
+            hasToggle = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(hasToggle) << "Diff toggle button should exist in session detail header";
 }
 
 // ============================================================================

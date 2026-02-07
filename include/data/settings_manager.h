@@ -8,7 +8,12 @@
 enum class Theme {
     System = 0,
     Light = 1,
-    Dark = 2
+    Dark = 2,
+    SolarizedDark = 3,
+    Dracula = 4,
+    Nord = 5,
+    Monokai = 6,
+    OneDark = 7
 };
 
 Q_DECLARE_METATYPE(Theme)

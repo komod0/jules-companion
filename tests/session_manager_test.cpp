@@ -489,8 +489,8 @@ TEST_F(SessionManagerTest, SessionDetailWidgetShowsActivities) {
     SessionDetailWidget widget;
     widget.setSession(session);
     
-    // 2 activities + 1 prompt bubble prepended = 3 items
-    EXPECT_EQ(widget.activityCount(), 3);
+    // 1 user activity + 1 prompt bubble = 2 items (progress updates are hidden)
+    EXPECT_EQ(widget.activityCount(), 2);
 }
 
 TEST_F(SessionManagerTest, SessionDetailWidgetShowsPullRequestLink) {

@@ -511,6 +511,21 @@ target_include_directories(session_detail_widget_test PRIVATE ${CMAKE_SOURCE_DIR
 
 add_test(NAME session_detail_widget COMMAND session_detail_widget_test)
 
+# AppColors Theme Caching test executable
+add_executable(app_colors_test app_colors_test.cpp)
+target_link_libraries(app_colors_test PRIVATE
+    gtest
+    jules_ui
+    jules_data
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::Test
+)
+target_include_directories(app_colors_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+add_test(NAME app_colors COMMAND app_colors_test)
+
 # Command Palette test executable
 add_executable(command_palette_test command_palette_test.cpp)
 target_link_libraries(command_palette_test PRIVATE

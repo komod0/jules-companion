@@ -169,6 +169,11 @@ QWidget* SettingsDialog::createAppearanceTab() {
     m_themeCombo->addItem("System Default", static_cast<int>(Theme::System));
     m_themeCombo->addItem("Light", static_cast<int>(Theme::Light));
     m_themeCombo->addItem("Dark", static_cast<int>(Theme::Dark));
+    m_themeCombo->addItem("Solarized Dark", static_cast<int>(Theme::SolarizedDark));
+    m_themeCombo->addItem("Dracula", static_cast<int>(Theme::Dracula));
+    m_themeCombo->addItem("Nord", static_cast<int>(Theme::Nord));
+    m_themeCombo->addItem("Monokai", static_cast<int>(Theme::Monokai));
+    m_themeCombo->addItem("One Dark", static_cast<int>(Theme::OneDark));
     
     // Font Size
     m_fontSizeSpin = new QSpinBox(widget);
@@ -273,7 +278,7 @@ QWidget* SettingsDialog::createAboutTab() {
     version->setStyleSheet("color: rgba(255, 255, 255, 0.8); background: transparent;");
     version->setAlignment(Qt::AlignCenter);
     
-    auto* copyright = new QLabel("© 2025 Google DeepMind", contentWidget);
+    auto* copyright = new QLabel("© 2026 Google DeepMind", contentWidget);
     copyright->setStyleSheet("color: rgba(255, 255, 255, 0.6); background: transparent;");
     copyright->setAlignment(Qt::AlignCenter);
     
@@ -306,9 +311,21 @@ QWidget* SettingsDialog::createAboutTab() {
     buttonsLayout->addWidget(updatesBtn);
     buttonsLayout->addWidget(feedbackBtn);
     
+    auto* logoLabel = new QLabel(contentWidget);
+    QPixmap logo(":/icons/jules-128.png");
+    logoLabel->setPixmap(logo.scaled(80, 80, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    logoLabel->setAlignment(Qt::AlignCenter);
+    logoLabel->setStyleSheet("background: transparent;");
+
+    auto* description = new QLabel("Desktop companion for Google Jules AI", contentWidget);
+    description->setStyleSheet("color: rgba(255, 255, 255, 0.7); background: transparent; font-size: 12px;");
+    description->setAlignment(Qt::AlignCenter);
+
     layout->addSpacing(40);
+    layout->addWidget(logoLabel);
     layout->addWidget(appName);
     layout->addWidget(version);
+    layout->addWidget(description);
     layout->addWidget(copyright);
     layout->addSpacing(30);
     layout->addWidget(buttonsWidget);

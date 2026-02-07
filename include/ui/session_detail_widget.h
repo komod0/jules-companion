@@ -33,6 +33,8 @@ public:
     QString pullRequestUrl() const;
 
     void requestOpenInBrowser();
+    void toggleDiffPanel();
+    DiffPanelWidget* diffPanel() const { return m_diffPanel; }
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
@@ -56,7 +58,7 @@ private:
 
     // Text truncation helpers
     bool isTruncatable(const QString& text) const;
-    QString truncateText(const QString& text, int maxLines = 5) const;
+    QString truncateText(const QString& text, int maxLines = 15) const;
 
     // Time-ago auto-refresh
     void updateTimeAgo();
@@ -79,10 +81,13 @@ private:
     QList<QWidget*> m_userBubbles;
     QPushButton* m_openBrowserBtn;
     QPushButton* m_pullRequestBtn;
+    QPushButton* m_diffToggleBtn = nullptr;
     QWidget* m_contentWidget;
     QSplitter* m_mainSplitter;
     DiffPanelWidget* m_diffPanel;
     QScrollArea* m_scrollArea = nullptr;
+    bool m_diffCollapsed = false;
+    QList<int> m_savedDiffSplitterSizes;
 
     // Action bar for plan approval / feedback
     QWidget* m_actionBar = nullptr;
