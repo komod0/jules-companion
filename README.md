@@ -2,7 +2,7 @@
 
 Native Qt6 desktop client for the [Jules](https://jules.google.com) AI coding assistant. Built with C++20, Qt 6, and OpenGL 4.3 for high-performance diff visualization and a polished desktop experience on Linux.
 
-> Forked from the original macOS SwiftUI application by [FUN RUN, LLC](https://github.com/funrun). The macOS source is preserved in the `macos/` directory for reference.
+> Based on the original macOS SwiftUI application by [Kathy Korevec](https://github.com/simpsoka) (Director of Product, Google Labs / Jules). The macOS source is preserved in the `macos/` directory for reference.
 
 ## Screenshots
 
@@ -146,7 +146,7 @@ MIT License -- see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-- Original macOS application by [FUN RUN, LLC](https://github.com/funrun)
+- Original macOS application by [Kathy Korevec](https://github.com/simpsoka)
 - [Qt](https://www.qt.io/) -- cross-platform application framework
 - [tree-sitter](https://tree-sitter.github.io/) -- incremental parsing for syntax highlighting
 - [FreeType](https://freetype.org/) -- font rendering for the OpenGL text pipeline
