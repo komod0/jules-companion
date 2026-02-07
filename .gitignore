@@ -29,3 +29,13 @@ qrc_*
 # Temporary files
 *.tmp
 *.log
+
+# Binary artifacts
+*.AppImage
+
+# Build artifacts
+build.log
+compile_commands.json
+
+# Editor/tool caches
+.cache/
