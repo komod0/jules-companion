@@ -1,14 +1,50 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
     <!-- Qt resource file for Jules application -->
-    <!-- Icons and assets will be added here as the project grows -->
     <qresource prefix="/icons">
-        <file>icons/jules.svg</file>
-        <file>icons/jules-256.png</file>
-        <file>icons/jules-128.png</file>
-        <file>icons/jules-64.png</file>
-        <file>icons/jules-48.png</file>
-        <file>icons/jules-32.png</file>
-        <file>icons/jules-16.png</file>
+        <!-- App icons -->
+        <file alias="jules.svg">icons/jules.svg</file>
+        <file alias="jules-256.png">icons/jules-256.png</file>
+        <file alias="jules-128.png">icons/jules-128.png</file>
+        <file alias="jules-64.png">icons/jules-64.png</file>
+        <file alias="jules-48.png">icons/jules-48.png</file>
+        <file alias="jules-32.png">icons/jules-32.png</file>
+        <file alias="jules-16.png">icons/jules-16.png</file>
+
+        <!-- Tray icons - static states (22x22 + 44x44 @2x) -->
+        <file alias="jules-tray-idle.png">icons/jules-tray-idle.png</file>
+        <file alias="jules-tray-idle@2x.png">icons/jules-tray-idle@2x.png</file>
+        <file alias="jules-tray-warning.png">icons/jules-tray-warning.png</file>
+        <file alias="jules-tray-warning@2x.png">icons/jules-tray-warning@2x.png</file>
+        <file alias="jules-tray-failed.png">icons/jules-tray-failed.png</file>
+        <file alias="jules-tray-failed@2x.png">icons/jules-tray-failed@2x.png</file>
+        <file alias="jules-tray-review.png">icons/jules-tray-review.png</file>
+        <file alias="jules-tray-review@2x.png">icons/jules-tray-review@2x.png</file>
+
+        <!-- Tray icons - loading animation frames (22x22 + 44x44 @2x) -->
+        <file alias="jules-tray-load-1.png">icons/jules-tray-load-1.png</file>
+        <file alias="jules-tray-load-1@2x.png">icons/jules-tray-load-1@2x.png</file>
+        <file alias="jules-tray-load-2.png">icons/jules-tray-load-2.png</file>
+        <file alias="jules-tray-load-2@2x.png">icons/jules-tray-load-2@2x.png</file>
+        <file alias="jules-tray-load-3.png">icons/jules-tray-load-3.png</file>
+        <file alias="jules-tray-load-3@2x.png">icons/jules-tray-load-3@2x.png</file>
+        <file alias="jules-tray-load-4.png">icons/jules-tray-load-4.png</file>
+        <file alias="jules-tray-load-4@2x.png">icons/jules-tray-load-4@2x.png</file>
+        <file alias="jules-tray-load-5.png">icons/jules-tray-load-5.png</file>
+        <file alias="jules-tray-load-5@2x.png">icons/jules-tray-load-5@2x.png</file>
+
+        <!-- Tray icons - running animation frames (22x22 + 44x44 @2x) -->
+        <file alias="jules-tray-running-1.png">icons/jules-tray-running-1.png</file>
+        <file alias="jules-tray-running-1@2x.png">icons/jules-tray-running-1@2x.png</file>
+        <file alias="jules-tray-running-2.png">icons/jules-tray-running-2.png</file>
+        <file alias="jules-tray-running-2@2x.png">icons/jules-tray-running-2@2x.png</file>
+        <file alias="jules-tray-running-3.png">icons/jules-tray-running-3.png</file>
+        <file alias="jules-tray-running-3@2x.png">icons/jules-tray-running-3@2x.png</file>
+        <file alias="jules-tray-running-4.png">icons/jules-tray-running-4.png</file>
+        <file alias="jules-tray-running-4@2x.png">icons/jules-tray-running-4@2x.png</file>
+        <file alias="jules-tray-running-5.png">icons/jules-tray-running-5.png</file>
+        <file alias="jules-tray-running-5@2x.png">icons/jules-tray-running-5@2x.png</file>
+        <file alias="jules-tray-running-6.png">icons/jules-tray-running-6.png</file>
+        <file alias="jules-tray-running-6@2x.png">icons/jules-tray-running-6@2x.png</file>
     </qresource>
 </RCC>

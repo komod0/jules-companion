@@ -6,12 +6,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# Export compile commands for LSP (clangd, clang-tidy, etc.)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 include(FetchContent)
 
 FetchContent_Declare(
     tree-sitter
     GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter.git
-    GIT_TAG        master
+    GIT_TAG        v0.26.5
 )
 FetchContent_MakeAvailable(tree-sitter)
 
@@ -60,15 +63,24 @@ add_library(jules_data STATIC
     src/data/database.cpp
     src/data/session_repository.cpp
     src/data/settings_manager.cpp
+    src/data/network_monitor.cpp
+    src/data/offline_sync_manager.cpp
+    src/data/diffs_database.cpp
+    src/data/filename_autocomplete_manager.cpp
     include/data/database.h
     include/data/session_repository.h
     include/data/settings_manager.h
+    include/data/network_monitor.h
+    include/data/offline_sync_manager.h
+    include/data/diffs_database.h
+    include/data/filename_autocomplete_manager.h
 )
 
 target_include_directories(jules_data PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(jules_data PUBLIC
     jules_api
     Qt6::Core
+    Qt6::Network
     Qt6::Sql
 )
 
@@ -109,6 +121,10 @@ add_library(jules_ui STATIC
     src/ui/notification_manager.cpp
     src/ui/merge_conflict_dialog.cpp
     src/ui/update_checker.cpp
+    src/ui/diff_panel_widget.cpp
+    src/ui/tray_popup_widget.cpp
+    src/ui/feedback_dialog.cpp
+    src/ui/command_palette.cpp
     include/ui/main_window.h
     include/ui/session_list_widget.h
     include/ui/new_session_dialog.h
@@ -121,6 +137,10 @@ add_library(jules_ui STATIC
     include/ui/notification_manager.h
     include/ui/merge_conflict_dialog.h
     include/ui/update_checker.h
+    include/ui/diff_panel_widget.h
+    include/ui/tray_popup_widget.h
+    include/ui/feedback_dialog.h
+    include/ui/command_palette.h
 )
 
 target_include_directories(jules_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -164,11 +184,15 @@ add_library(jules_rendering STATIC
     src/rendering/diff_renderer.cpp
     src/rendering/boids_widget.cpp
     src/rendering/wave_widget.cpp
+    src/rendering/shared_syntax_cache.cpp
+    src/rendering/diff_precomputation_service.cpp
     include/rendering/font_atlas.h
     include/rendering/opengl_widget.h
     include/rendering/diff_renderer.h
     include/rendering/boids_widget.h
     include/rendering/wave_widget.h
+    include/rendering/shared_syntax_cache.h
+    include/rendering/diff_precomputation_service.h
 )
 
 target_include_directories(jules_rendering PUBLIC 
@@ -177,9 +201,12 @@ target_include_directories(jules_rendering PUBLIC
 )
 target_link_libraries(jules_rendering PUBLIC
     jules_highlighting
+    jules_api
+    jules_data
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
+    Qt6::Network
     Qt6::OpenGL
     Qt6::OpenGLWidgets
     ${FREETYPE_LIBRARIES}
@@ -187,7 +214,10 @@ target_link_libraries(jules_rendering PUBLIC
 
 add_executable(jules-linux
     src/main.cpp
+    src/app/app_controller.cpp
+    include/app/app_controller.h
     resources/resources.qrc
+    resources/shaders.qrc
 )
 
 target_link_libraries(jules-linux PRIVATE
@@ -196,6 +226,7 @@ target_link_libraries(jules-linux PRIVATE
     jules_highlighting
     jules_ui
     jules_input
+    jules_rendering
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
