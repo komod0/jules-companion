@@ -2,7 +2,7 @@
 
 Native Qt6 desktop client for the [Jules](https://jules.google.com) AI coding assistant. Built with C++20, Qt 6, and OpenGL 4.3 for high-performance diff visualization and a polished desktop experience on Linux.
 
-> Based on the original macOS SwiftUI application by [Kathy Korevec](https://github.com/simpsoka) (Director of Product, Google Labs / Jules). The macOS source is preserved in the `macos/` directory for reference.
+> Based on the original macOS SwiftUI application by [Kathy Korevec](https://github.com/simpsoka). The macOS source is preserved in the `macos/` directory for reference.
 
 ## Screenshots
 
