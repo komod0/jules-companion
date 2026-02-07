@@ -10,6 +10,12 @@ All notable changes to the Linux port of Jules Companion.
 - New test suites: settings dialog, diff panel widget, diff precomputation, diffs database, feedback dialog, filename autocomplete, flash message, merge conflict dialog, network monitor, notification manager, offline sync, shared syntax cache, tray popup widget, update checker
 - Comprehensive architecture documentation (`docs/ARCHITECTURE.md`)
 
+### Fixed
+- Diff panel loading animation now shows for all sessions pending activities, not just active ones (added `activitiesFetched` flag to Session)
+- Diff panel underwater animation deferred until OpenGL context is initialized, preventing silent frame drops when `setLoading(true)` is called before `initializeGL()`
+- Tray popup positioning on Linux: detect panel edge from available vs full screen geometry instead of relying on `QCursor::pos()` when `QSystemTrayIcon::geometry()` returns `(0,0,0,0)`
+- Tray popup right-aligns when icon is on right half of screen
+
 ### Changed
 - Chat bubble text wrapping on resize: replaced `QListWidget` with `QVBoxLayout` for proper reflow
 - Scroll-to-bottom fix: activity feed now reliably scrolls to the latest message
@@ -68,7 +74,7 @@ All notable changes to the Linux port of Jules Companion.
 - Local install script (`scripts/install-local.sh`)
 - Desktop entry and icon installation (FreeDesktop)
 - CMake install rules with GNUInstallDirs
-- 27 test suites (Google Test + Qt Test)
+- 31 test suites (Google Test + Qt Test)
 - CI/CD: GitHub Actions for Ubuntu, Fedora, Arch Linux
 
 ## [0.1.0] -- 2026-01-28
