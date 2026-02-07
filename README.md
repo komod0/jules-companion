@@ -4,13 +4,19 @@ Native Qt6 desktop client for the [Jules](https://jules.google.com) AI coding as
 
 > Forked from the original macOS SwiftUI application by [FUN RUN, LLC](https://github.com/funrun). The macOS source is preserved in the `macos/` directory for reference.
 
+## Screenshots
+
+| Dark | Light | Dracula |
+|------|-------|---------|
+| ![Dark theme](screenshots/session-detail-dark.png) | ![Light theme](screenshots/session-detail-light.png) | ![Dracula theme](screenshots/session-detail-dracula.png) |
+
 ## Features
 
 - **Session Management** -- Create, browse, and manage coding sessions with real-time status polling
 - **OpenGL Diff Rendering** -- GPU-accelerated diff viewer with character-level inline highlighting, syntax coloring (19 languages via tree-sitter), and text selection/copy
 - **System Tray** -- Animated tray icon with colored status indicators, context menu, and popup panel (X11 AppIndicator / Wayland SNI)
 - **Global Hotkeys** -- Ctrl+Alt+J to toggle the window (X11 XGrabKey / Wayland xdg-desktop-portal)
-- **Dark and Light Themes** -- Follows system preference or manual selection; all UI components adapt live
+- **8 Theme Presets** -- System, Light, Dark, Solarized Dark, Dracula, Nord, Monokai, One Dark; all UI components adapt live
 - **Offline Support** -- Queue sessions while offline, auto-sync with exponential backoff when connectivity returns
 - **Notifications** -- Desktop notifications for session state changes (D-Bus org.freedesktop.Notifications)
 - **GPU Animations** -- Boids particle system and Gerstner wave effects using compute shaders
