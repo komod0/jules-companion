@@ -383,6 +383,7 @@ void AppController::connectSignals()
             Session updated = *session;
             updated.activities = activities;
             updated.updateCachedDiffData();
+            updated.activitiesFetched = true;
 
             qDebug() << "[main] After updateCachedDiffData: hasDiffs=" << updated.cachedLatestDiffs.has_value()
                      << "diffCount=" << (updated.cachedLatestDiffs.has_value() ? updated.cachedLatestDiffs->size() : 0);
@@ -393,8 +394,15 @@ void AppController::connectSignals()
     });
 
     connect(m_apiClient.get(), &JulesApiClient::activitiesUnchanged,
-            [](const QString& sessionId) {
+            [this](const QString& sessionId) {
         qDebug() << "[main] Activities unchanged for session" << sessionId.left(8) << "(hash match, skipping update)";
+        auto session = m_repository->getSession(sessionId);
+        if (session) {
+            Session updated = *session;
+            updated.activitiesFetched = true;
+            m_repository->saveSession(updated);
+            m_sessionDetailWidget->setSession(updated);
+        }
     });
 
     // Activities -> diff precomputation service

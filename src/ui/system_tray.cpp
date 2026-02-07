@@ -4,6 +4,8 @@
 #include <QApplication>
 #include <QCursor>
 #include <QPixmap>
+#include <QScreen>
+#include <QGuiApplication>
 
 namespace jules {
 
@@ -172,13 +174,30 @@ void SystemTray::onActivated(QSystemTrayIcon::ActivationReason reason) {
     emit activated(reason);
 
     if (reason == QSystemTrayIcon::Trigger) {
-        // Use tray icon geometry for positioning; fall back to cursor
+        // Use tray icon geometry for positioning; fall back to panel-edge detection
         QRect iconRect = m_trayIcon->geometry();
         QPoint pos;
         if (iconRect.isValid() && !iconRect.isNull() && iconRect.width() > 0) {
             pos = iconRect.center();
         } else {
-            pos = QCursor::pos();
+            // On Linux, QSystemTrayIcon::geometry() often returns (0,0,0,0).
+            // Detect panel location from the gap between full and available geometry.
+            QScreen* screen = QGuiApplication::primaryScreen();
+            QRect avail = screen->availableGeometry();
+            QRect full = screen->geometry();
+            int bottomGap = full.bottom() - avail.bottom();
+            int topGap = avail.top() - full.top();
+
+            if (bottomGap > 10) {
+                // Bottom panel: position near bottom-right
+                pos = QPoint(avail.right() - 200, avail.bottom());
+            } else if (topGap > 10) {
+                // Top panel: position near top-right
+                pos = QPoint(avail.right() - 200, avail.top());
+            } else {
+                // Fallback: bottom-right of available area
+                pos = QPoint(avail.right() - 200, avail.bottom() - 50);
+            }
         }
         emit popupRequested(pos);
     } else if (reason == QSystemTrayIcon::MiddleClick) {

@@ -226,7 +226,9 @@ struct Session {
     
     // Flag indicating if diffs are cached (fast lookup)
     bool hasCachedDiffsFlag = false;
-    
+
+    bool activitiesFetched = false;  // Client-side: true once API activities call completes
+
     bool isActive() const {
         return state == SessionState::Queued ||
                state == SessionState::Planning ||

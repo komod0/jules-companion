@@ -390,20 +390,16 @@ void SessionDetailWidget::setSession(const Session& session) {
     if (m_diffPanel) {
         bool hasDiffs = session.cachedLatestDiffs.has_value() && !session.cachedLatestDiffs->isEmpty();
 
-        // Show loading spinner for active sessions that don't have diffs yet
-        bool isActiveSession = session.state == SessionState::Queued ||
-                               session.state == SessionState::Planning ||
-                               session.state == SessionState::InProgress;
-
         if (hasDiffs) {
             qDebug() << "[SessionDetailWidget::setSession] Setting" << session.cachedLatestDiffs->size() << "diffs";
             m_diffPanel->setLoading(false);
             m_diffPanel->setDiffs(session.cachedLatestDiffs.value());
-        } else if (isActiveSession) {
-            qDebug() << "[SessionDetailWidget::setSession] Active session, showing loading spinner";
+        } else if (!session.activitiesFetched) {
+            // Show loading for ANY session whose activities haven't arrived yet
+            qDebug() << "[SessionDetailWidget::setSession] Activities not fetched, showing loading spinner";
             m_diffPanel->setLoading(true);
         } else {
-            qDebug() << "[SessionDetailWidget::setSession] No diffs available (completed/idle session)";
+            qDebug() << "[SessionDetailWidget::setSession] No diffs available (activities fetched)";
             m_diffPanel->setLoading(false);
             m_diffPanel->setDiffs({});  // Clear any old diffs
         }

@@ -122,7 +122,10 @@ void DiffPanelWidget::setLoading(bool loading) {
     m_isLoading = loading;
 
     if (loading) {
-        startUnderwaterAnimation();
+        if (m_initialized) {
+            startUnderwaterAnimation();
+        }
+        // else: deferred — initializeGL() will start it
         qDebug() << "[DiffPanelWidget] Loading state started with underwater scene";
     } else {
         stopUnderwaterAnimation();
@@ -403,6 +406,12 @@ void DiffPanelWidget::initializeGL() {
             m_diffRenderer->setDiffSections(m_pendingDiffs);
             m_pendingDiffs.clear();
             update();
+        }
+
+        // Start deferred loading animation if loading was requested before GL init
+        if (m_isLoading) {
+            qDebug() << "[DiffPanelWidget::initializeGL] Starting deferred loading animation";
+            startUnderwaterAnimation();
         }
     } catch (const std::exception& e) {
         qWarning() << "[DiffPanelWidget::initializeGL] Exception:" << e.what();

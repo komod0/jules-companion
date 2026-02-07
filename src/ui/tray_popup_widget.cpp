@@ -359,8 +359,13 @@ void TrayPopupWidget::positionOnScreen(const QPoint& nearPos) {
     bool nearTop    = nearPos.y() < full.top() + full.height() * 0.20;
     bool nearBottom = nearPos.y() > full.bottom() - full.height() * 0.20;
 
-    // X: center popup on the icon/click position
-    int x = nearPos.x() - width() / 2;
+    // X: right-align popup when icon is on right half of screen
+    int x;
+    if (nearPos.x() > avail.center().x()) {
+        x = nearPos.x() - width() + 20;  // Right-align with small offset
+    } else {
+        x = nearPos.x() - 20;  // Left-align with small offset
+    }
 
     // Y: position based on where the panel is
     int y;
