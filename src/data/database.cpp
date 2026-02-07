@@ -78,7 +78,7 @@ bool Database::runMigrations()
 {
     int currentVersion = getCurrentVersion();
     
-    constexpr int LATEST_VERSION = 2;
+    constexpr int LATEST_VERSION = 3;
     
     for (int v = currentVersion + 1; v <= LATEST_VERSION; ++v) {
         if (!runMigration(v)) {
@@ -143,7 +143,27 @@ bool Database::runMigration(int version)
             query.exec("CREATE INDEX IF NOT EXISTS idx_sessions_state_create_time ON sessions(state, create_time)");
             return true;
         }
-        
+
+        case 3: {
+            bool success = query.exec(R"(
+                CREATE TABLE IF NOT EXISTS pending_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    json_payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    retry_count INTEGER DEFAULT 0,
+                    last_retry_at TEXT,
+                    status TEXT DEFAULT 'pending'
+                )
+            )");
+            if (!success) {
+                qWarning() << "Failed to create pending_sessions table:" << query.lastError().text();
+                return false;
+            }
+
+            query.exec("CREATE INDEX IF NOT EXISTS idx_pending_sessions_status ON pending_sessions(status)");
+            return true;
+        }
+
         default:
             qWarning() << "Unknown migration version:" << version;
             return false;

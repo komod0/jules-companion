@@ -1,4 +1,5 @@
 #include "api/jules_api_client.h"
+#include "data/settings_manager.h"
 
 #include <QJsonDocument>
 #include <QTimer>
@@ -66,6 +67,7 @@ JulesApiClient::JulesApiClient(QNetworkAccessManager* networkManager, QObject* p
     , m_networkManager(networkManager)
     , m_ownsNetworkManager(networkManager == nullptr)
     , m_rateLimiter(100, 60, 80)
+    , m_geminiRateLimiter(10, 60, 8)
 {
     if (m_ownsNetworkManager) {
         m_networkManager = new QNetworkAccessManager(this);
@@ -274,6 +276,110 @@ void JulesApiClient::sendMessage(const QString& sessionId, const QString& messag
     m_rateLimiter.recordRequest();
 }
 
+void JulesApiClient::requestAiSummary(const QString& sessionId, const QList<Activity>& activities) {
+    if (m_geminiRateLimiter.isAtLimit()) {
+        qDebug() << "[JulesApiClient] Gemini rate limit reached, skipping AI summary for" << sessionId;
+        return;
+    }
+
+    QString geminiKey = SettingsManager::instance().geminiApiKey();
+    if (geminiKey.isEmpty()) {
+        qDebug() << "[JulesApiClient] No Gemini API key configured, skipping AI summary";
+        return;
+    }
+
+    // Extract agent messages from activities
+    QStringList agentMessages;
+    for (const auto& activity : activities) {
+        if (activity.agentMessaged.has_value()) {
+            agentMessages.append(activity.agentMessaged->agentMessage);
+        }
+    }
+
+    if (agentMessages.isEmpty()) {
+        qDebug() << "[JulesApiClient] No agent messages found for AI summary, sessionId:" << sessionId;
+        return;
+    }
+
+    // Build the prompt
+    QString combinedText = agentMessages.join("\n\n");
+    if (combinedText.length() > 8000) {
+        combinedText = combinedText.left(8000) + "...";
+    }
+
+    QString prompt = "Summarize these coding session activities in 2-3 sentences:\n\n" + combinedText;
+
+    // Build Gemini API request body
+    QJsonObject textPart;
+    textPart["text"] = prompt;
+
+    QJsonArray partsArray;
+    partsArray.append(textPart);
+
+    QJsonObject content;
+    content["parts"] = partsArray;
+
+    QJsonArray contentsArray;
+    contentsArray.append(content);
+
+    QJsonObject body;
+    body["contents"] = contentsArray;
+
+    // Build URL with API key
+    QUrl url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent");
+    QUrlQuery query;
+    query.addQueryItem("key", geminiKey);
+    url.setQuery(query);
+
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+
+    QByteArray jsonData = QJsonDocument(body).toJson();
+    QNetworkReply* reply = m_networkManager->post(request, jsonData);
+    m_geminiRateLimiter.recordRequest();
+
+    // Handle the Gemini reply directly via lambda.
+    // onReplyFinished will also fire but safely early-returns (not in m_pendingRequests)
+    // and calls deleteLater, so we don't call it here.
+    connect(reply, &QNetworkReply::finished, this, [this, reply, sessionId]() {
+
+        if (reply->error() != QNetworkReply::NoError) {
+            qDebug() << "[JulesApiClient] Gemini API error:" << reply->errorString();
+            return;
+        }
+
+        QByteArray responseData = reply->readAll();
+        QJsonParseError parseError;
+        QJsonDocument doc = QJsonDocument::fromJson(responseData, &parseError);
+
+        if (parseError.error != QJsonParseError::NoError) {
+            qDebug() << "[JulesApiClient] Gemini response parse error:" << parseError.errorString();
+            return;
+        }
+
+        // Parse: candidates[0].content.parts[0].text
+        QJsonObject json = doc.object();
+        QJsonArray candidates = json["candidates"].toArray();
+        if (candidates.isEmpty()) {
+            qDebug() << "[JulesApiClient] Gemini response has no candidates";
+            return;
+        }
+
+        QJsonObject firstCandidate = candidates[0].toObject();
+        QJsonObject contentObj = firstCandidate["content"].toObject();
+        QJsonArray parts = contentObj["parts"].toArray();
+        if (parts.isEmpty()) {
+            qDebug() << "[JulesApiClient] Gemini response has no parts";
+            return;
+        }
+
+        QString summary = parts[0].toObject()["text"].toString().trimmed();
+        if (!summary.isEmpty()) {
+            emit aiSummaryReceived(sessionId, summary);
+        }
+    });
+}
+
 void JulesApiClient::onReplyFinished(QNetworkReply* reply) {
     if (!m_pendingRequests.contains(reply)) {
         reply->deleteLater();
@@ -327,6 +433,18 @@ void JulesApiClient::handleResponse(QNetworkReply* reply, const PendingRequest& 
     
     switch (request.type) {
         case RequestType::GetSessions: {
+            // Compute hash for caching (skip full parse if unchanged)
+            QByteArray newHash = QCryptographicHash::hash(responseData, QCryptographicHash::Md5);
+
+            if (!m_sessionResponseHash.isEmpty() && m_sessionResponseHash == newHash) {
+                // Response unchanged, skip parsing
+                emit sessionsUnchanged();
+                break;
+            }
+
+            // Cache the new hash
+            m_sessionResponseHash = newHash;
+
             QList<Session> sessions;
             QJsonArray sessionsArray = json["sessions"].toArray();
             for (const QJsonValue& val : sessionsArray) {
@@ -869,16 +987,22 @@ QString Session::computeGitStatsSummary(const QList<Activity>& activities) {
 }
 
 QList<CachedDiff> Session::computeLatestDiffs(const QList<Activity>& activities) {
+    qDebug() << "[computeLatestDiffs] Processing" << activities.size() << "activities";
     if (activities.isEmpty()) return QList<CachedDiff>();
     
     // Find the last activity that has a git patch
     const Activity* latestWithPatch = nullptr;
     for (auto it = activities.rbegin(); it != activities.rend(); ++it) {
+        qDebug() << "[computeLatestDiffs] Activity has artifacts:" << it->artifacts.has_value();
         if (it->artifacts.has_value()) {
+            qDebug() << "[computeLatestDiffs] Artifacts count:" << it->artifacts->size();
             for (const auto& artifact : it->artifacts.value()) {
-                if (artifact.changeSet.has_value() && 
-                    artifact.changeSet->gitPatch.has_value() &&
-                    artifact.changeSet->gitPatch->unidiffPatch.has_value()) {
+                bool hasChangeSet = artifact.changeSet.has_value();
+                bool hasGitPatch = hasChangeSet && artifact.changeSet->gitPatch.has_value();
+                bool hasUnidiff = hasGitPatch && artifact.changeSet->gitPatch->unidiffPatch.has_value();
+                qDebug() << "[computeLatestDiffs] Artifact - changeSet:" << hasChangeSet 
+                         << "gitPatch:" << hasGitPatch << "unidiff:" << hasUnidiff;
+                if (hasUnidiff) {
                     latestWithPatch = &(*it);
                     break;
                 }
@@ -888,6 +1012,7 @@ QList<CachedDiff> Session::computeLatestDiffs(const QList<Activity>& activities)
     }
     
     if (!latestWithPatch || !latestWithPatch->artifacts.has_value()) {
+        qDebug() << "[computeLatestDiffs] No activity with patches found";
         return QList<CachedDiff>();
     }
     
@@ -921,6 +1046,7 @@ QList<CachedDiff> Session::computeLatestDiffs(const QList<Activity>& activities)
         }
     }
     
+    qDebug() << "[computeLatestDiffs] Returning" << allDiffs.size() << "diffs";
     return allDiffs;
 }
 

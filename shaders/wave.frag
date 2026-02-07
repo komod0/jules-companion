@@ -8,10 +8,18 @@
 in vec2 v_uv;
 in float v_waveHeight;
 
-// MARK: - Uniforms
-uniform vec4 u_fillColor;       // Wave fill color
-uniform vec4 u_strokeColor;     // Stroke color
-uniform float u_strokeWidth;    // Stroke width
+// MARK: - Uniforms (must match vertex shader uniform block)
+layout(std140) uniform WaveUniforms {
+    vec2 u_viewSize;        // View dimensions in pixels
+    float u_time;           // Animation time
+    float u_gravity;        // Gravity constant (~9.81)
+    vec4 u_fillColor;       // Wave fill color (RGBA)
+    vec4 u_strokeColor;     // Stroke color
+    float u_strokeWidth;    // Stroke width (0 = no stroke)
+    float u_cornerRadius;   // Corner radius
+    int u_waveCount;        // Number of active waves
+    int u_waveEdge;         // 0 = top edge, 1 = bottom edge
+};
 
 // MARK: - Output
 out vec4 fragColor;

@@ -52,6 +52,9 @@ public:
     bool initialize();
     bool isInitialized() const;
     bool shadersValid() const;
+
+    // Adaptive memory management
+    void releaseResources();
     
     // Viewport
     void setViewportSize(int width, int height, float devicePixelRatio);
@@ -103,6 +106,7 @@ private:
     void updateWavePresets();
     
     bool m_initialized = false;
+    bool m_needsReinit = false;
     bool m_shadersValid = false;
     bool m_paused = false;
     bool m_autoplay = true;

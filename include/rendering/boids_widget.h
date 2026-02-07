@@ -40,6 +40,9 @@ public:
     
     bool initialize();
     bool isInitialized() const;
+
+    // Adaptive memory management
+    void releaseResources();
     
     bool hasComputeShaderSupport() const;
     bool computeShaderValid() const;
@@ -90,6 +93,7 @@ private:
     void updateUniformBuffer();
     
     bool m_initialized = false;
+    bool m_needsReinit = false;
     bool m_hasComputeShader = false;
     bool m_computeShaderValid = false;
     bool m_renderShadersValid = false;

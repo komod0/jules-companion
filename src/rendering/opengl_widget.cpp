@@ -6,6 +6,7 @@
 
 #include "rendering/opengl_widget.h"
 #include "rendering/font_atlas.h"
+#include "data/settings_manager.h"
 
 #include <QFile>
 #include <QDateTime>
@@ -115,7 +116,8 @@ void OpenGLTextWidget::initializeGL() {
     // Initialize font atlas
     m_devicePixelRatio = devicePixelRatioF();
     m_fontAtlas = std::make_unique<FontAtlas>();
-    if (!m_fontAtlas->initialize(12.0f, m_devicePixelRatio)) {
+    float fontSize = static_cast<float>(SettingsManager::instance().diffFontSize());
+    if (!m_fontAtlas->initialize(fontSize, m_devicePixelRatio)) {
         qCritical() << "Failed to initialize font atlas";
         return;
     }

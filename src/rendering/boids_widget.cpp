@@ -76,6 +76,36 @@ BoidsWidget::~BoidsWidget() {
     }
 }
 
+void BoidsWidget::releaseResources() {
+    if (!m_initialized) return;
+
+    makeCurrent();
+
+    m_vao.destroy();
+    m_quadBuffer.destroy();
+
+    if (m_particleSSBO) {
+        glDeleteBuffers(1, &m_particleSSBO);
+        m_particleSSBO = 0;
+    }
+    if (m_uniformUBO) {
+        glDeleteBuffers(1, &m_uniformUBO);
+        m_uniformUBO = 0;
+    }
+
+    m_computeProgram.reset();
+    m_renderProgram.reset();
+
+    doneCurrent();
+
+    m_initialized = false;
+    m_needsReinit = true;
+    m_computeShaderValid = false;
+    m_renderShadersValid = false;
+
+    qDebug() << "[BoidsWidget] Resources released for memory savings";
+}
+
 bool BoidsWidget::initialize() {
     if (m_initialized) return true;
     
@@ -236,6 +266,11 @@ void BoidsWidget::resizeGL(int w, int h) {
 }
 
 void BoidsWidget::paintGL() {
+    if (m_needsReinit) {
+        initialize();
+        m_needsReinit = false;
+    }
+
     if (!m_initialized) return;
     
     glClearColor(m_backgroundColor.r, m_backgroundColor.g, 

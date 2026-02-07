@@ -1,10 +1,14 @@
 #include "ui/new_session_dialog.h"
+#include "data/filename_autocomplete_manager.h"
 
 #include <QHBoxLayout>
 #include <QFormLayout>
 #include <QMessageBox>
 #include <QFont>
 #include <QPushButton>
+#include <QCompleter>
+#include <QStringListModel>
+#include <QRegularExpression>
 
 namespace jules {
 
@@ -222,7 +226,7 @@ void NewSessionDialog::onPromptChanged() {
 void NewSessionDialog::validateInput() {
     bool valid = isValid();
     m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(valid);
-    
+
     if (!valid && m_sourceCombo->count() == 0) {
         m_errorLabel->setText("No repositories available. Please add a source first.");
         m_errorLabel->show();
@@ -232,6 +236,34 @@ void NewSessionDialog::validateInput() {
     } else {
         m_errorLabel->hide();
     }
+}
+
+void NewSessionDialog::setAutocompleteManager(FilenameAutocompleteManager* manager) {
+    if (!manager) return;
+    m_autocompleteManager = manager;
+
+    // When the user mentions file paths in the prompt, provide suggestions.
+    // The suggestionsReady signal is used asynchronously; we cannot use a
+    // QCompleter on QTextEdit directly, so we listen and insert the best
+    // match when the user appears to be typing a path.
+    connect(m_autocompleteManager, &FilenameAutocompleteManager::suggestionsReady,
+            this, [this](const QStringList& suggestions) {
+        if (suggestions.isEmpty()) return;
+        // Show first suggestion as tooltip near the prompt editor
+        m_promptEdit->setToolTip(suggestions.join("\n"));
+    });
+
+    // Request suggestions on text changes when the last word looks like a path
+    connect(m_promptEdit, &QTextEdit::textChanged, this, [this]() {
+        if (!m_autocompleteManager) return;
+        QString text = m_promptEdit->toPlainText();
+        // Find the last whitespace-delimited token
+        int lastSpace = text.lastIndexOf(QRegularExpression("\\s"));
+        QString lastToken = (lastSpace >= 0) ? text.mid(lastSpace + 1) : text;
+        if (lastToken.contains('/') || lastToken.contains('.')) {
+            m_autocompleteManager->requestSuggestions(lastToken, 5);
+        }
+    });
 }
 
 }

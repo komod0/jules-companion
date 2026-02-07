@@ -125,6 +125,7 @@ struct ParsedDiffSection {
     int linesAdded = 0;
     int linesRemoved = 0;
     bool isNewFile = false;
+    bool isBinary = false;
     float yOffset = 0.0f;
     float height = 0.0f;
     float maxContentWidth = 0.0f;
@@ -138,18 +139,22 @@ struct TileLayout {
     float height = 0.0f;
 };
 
+class SharedSyntaxCache;
+
 class DiffRenderer {
 public:
     DiffRenderer();
     ~DiffRenderer();
-    
+
     DiffRenderer(const DiffRenderer&) = delete;
     DiffRenderer& operator=(const DiffRenderer&) = delete;
     DiffRenderer(DiffRenderer&&) noexcept;
     DiffRenderer& operator=(DiffRenderer&&) noexcept;
-    
+
     bool initialize();
     bool isInitialized() const;
+
+    void setSharedSyntaxCache(SharedSyntaxCache* cache);
     
     void setViewportSize(int width, int height, float devicePixelRatio);
     ViewportSize viewportSize() const;
@@ -171,11 +176,17 @@ public:
     
     void setSelection(const TextPosition& start, const TextPosition& end);
     void clearSelection();
+    void selectAll();
     TextSelection selection() const;
     std::string selectedText() const;
+
+    int sectionIndexAtY(float worldY) const;
+    std::string sectionFilename(int sectionIndex) const;
     
     bool syntaxHighlightingAvailable() const;
-    
+
+    void setDarkMode(bool isDark);
+
     void invalidateCache();
     
     static constexpr float kHeaderHeight = 35.0f;

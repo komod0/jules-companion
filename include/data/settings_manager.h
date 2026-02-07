@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QSettings>
 
 enum class Theme {
@@ -36,6 +37,22 @@ public:
     
     int diffFontSize() const;
     void setDiffFontSize(int size);
+    
+    // Launch at Login
+    bool launchAtLoginEnabled() const;
+    void setLaunchAtLoginEnabled(bool enabled);
+    
+    // AI Summaries
+    bool aiSummariesEnabled() const;
+    void setAiSummariesEnabled(bool enabled);
+    QString geminiApiKey() const;
+    void setGeminiApiKey(const QString& key);
+
+    // Repository Folders (local paths for merge/autocomplete)
+    QStringList repositoryFolders() const;
+    void setRepositoryFolders(const QStringList& folders);
+    void addRepositoryFolder(const QString& folder);
+    void removeRepositoryFolder(const QString& folder);
 
     void sync();
 
@@ -44,6 +61,9 @@ signals:
     void themeChanged(Theme theme);
     void notificationsEnabledChanged(bool enabled);
     void fontSizeChanged();
+    void launchAtLoginChanged(bool enabled);
+    void aiSummariesEnabledChanged(bool enabled);
+    void repositoryFoldersChanged();
 
 private:
     SettingsManager(QObject* parent = nullptr);

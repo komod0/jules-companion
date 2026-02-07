@@ -337,17 +337,26 @@ struct Session {
     
     /// Updates cached diff data from activities
     void updateCachedDiffData() {
+        qDebug() << "[updateCachedDiffData] Called, activities.has_value()=" << activities.has_value();
         if (activities.has_value()) {
+            qDebug() << "[updateCachedDiffData] Activities count:" << activities.value().size();
             QString summary = computeGitStatsSummary(activities.value());
             if (!summary.isEmpty()) {
                 cachedGitStatsSummary = summary;
+                qDebug() << "[updateCachedDiffData] Git stats:" << summary;
             }
             QList<CachedDiff> diffs = computeLatestDiffs(activities.value());
+            qDebug() << "[updateCachedDiffData] computeLatestDiffs returned" << diffs.size() << "diffs";
             if (!diffs.isEmpty()) {
                 cachedLatestDiffs = diffs;
                 hasCachedDiffsFlag = true;
+                qDebug() << "[updateCachedDiffData] Cached" << diffs.size() << "diffs";
+            } else {
+                qDebug() << "[updateCachedDiffData] No diffs found in activities!";
             }
             cachedGitStatsUpdateTime = updateTime.value_or(createTime.value_or(QString()));
+        } else {
+            qDebug() << "[updateCachedDiffData] No activities to process!";
         }
     }
 };
@@ -408,13 +417,15 @@ public:
     void createSession(const Source& source, const QString& branchName, 
                        const QString& prompt);
     void sendMessage(const QString& sessionId, const QString& message);
+    void requestAiSummary(const QString& sessionId, const QList<Activity>& activities);
 
     void setRetryDelayMs(int delayMs);
     void setMaxRetries(int maxRetries);
 
 signals:
-    void sessionsReceived(const QList<Session>& sessions, 
+    void sessionsReceived(const QList<Session>& sessions,
                           const QString& nextPageToken);
+    void sessionsUnchanged();  // Response unchanged (hash match)
     void sessionReceived(const Session& session);
     void activitiesReceived(const QString& sessionId, 
                             const QList<Activity>& activities);
@@ -424,6 +435,7 @@ signals:
                          const QString& nextPageToken);
     void sessionCreated(const Session& session);
     void messageSent(const QString& sessionId, bool success);
+    void aiSummaryReceived(const QString& sessionId, const QString& summary);
     void errorOccurred(const ApiError& error);
 
 private slots:
@@ -476,8 +488,12 @@ private:
     RateLimiter m_rateLimiter;
     QMap<QNetworkReply*, PendingRequest> m_pendingRequests;
     
-    // Response hash cache for skipping unchanged activity responses
+    // Response hash cache for skipping unchanged responses
+    QByteArray m_sessionResponseHash;
     QMap<QString, QByteArray> m_activityResponseHashes;  // sessionId -> hash
+
+    // Gemini AI summary support
+    RateLimiter m_geminiRateLimiter;
 };
 
 } // namespace jules

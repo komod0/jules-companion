@@ -479,4 +479,37 @@ SessionState SessionRepository::stringToSessionState(const QString& str)
     return SessionState::Unspecified;
 }
 
+int SessionRepository::cachedSessionCount() const
+{
+    QSqlQuery query(m_db->database());
+    if (!query.exec("SELECT COUNT(*) FROM sessions") || !query.next()) {
+        return 0;
+    }
+    return query.value(0).toInt();
+}
+
+bool SessionRepository::clearAllCachedData()
+{
+    QSqlDatabase sqlDb = m_db->database();
+    sqlDb.transaction();
+    
+    QSqlQuery diffsQuery(sqlDb);
+    if (!diffsQuery.exec("DELETE FROM cached_diffs")) {
+        qWarning() << "Failed to clear cached diffs:" << diffsQuery.lastError().text();
+        sqlDb.rollback();
+        return false;
+    }
+    
+    QSqlQuery sessionsQuery(sqlDb);
+    if (!sessionsQuery.exec("DELETE FROM sessions")) {
+        qWarning() << "Failed to clear sessions:" << sessionsQuery.lastError().text();
+        sqlDb.rollback();
+        return false;
+    }
+    
+    sqlDb.commit();
+    emit sessionsReloaded();
+    return true;
+}
+
 }

@@ -8,6 +8,8 @@
 #include <QPainter>
 #include <QApplication>
 #include <QStyleOptionViewItem>
+#include <QMenu>
+#include <QClipboard>
 
 namespace jules {
 
@@ -61,6 +63,36 @@ public:
         // Determine theme from palette
         bool isDark = option.palette.window().color().lightness() < 128;
         
+        // Check if this is a section header
+        bool isHeader = index.data(Qt::UserRole + 4).toBool();
+        
+        if (isHeader) {
+            // Render section header: smaller font, muted color, no background/hover
+            QRect headerRect = option.rect.adjusted(12, 8, -8, -4);
+
+            QString title = index.data(Qt::DisplayRole).toString();
+            QColor textColor = AppColors::textSecondary(isDark);
+
+            painter->setPen(textColor);
+            QFont font = option.font;
+            font.setPointSize(10);
+            font.setWeight(QFont::DemiBold);
+            painter->setFont(font);
+
+            painter->drawText(headerRect, Qt::AlignLeft | Qt::AlignVCenter, title);
+
+            // Subtle separator line below header text
+            QColor sepColor = AppColors::separator(isDark);
+            sepColor.setAlphaF(0.4);
+            painter->setPen(QPen(sepColor, 1));
+            int lineY = option.rect.bottom() - 2;
+            painter->drawLine(option.rect.left() + 12, lineY, option.rect.right() - 12, lineY);
+
+            painter->restore();
+            return;
+        }
+        
+        // Regular session item rendering
         QRect rect = option.rect.adjusted(4, 2, -4, -2);
         
         // Get item data
@@ -85,9 +117,10 @@ public:
         // Calculate content rect
         QRect contentRect = rect.adjusted(8, 0, -8, 0);
         
-        // Draw unviewed indicator (4x4 purple circle)
+        // Draw unviewed indicator (4x4 circle, colored by session state)
         if (!isViewed) {
-            QColor dotColor = AppColors::unviewedIndicator(isDark);
+            int sessionState = index.data(Qt::UserRole + 5).toInt();
+            QColor dotColor = AppColors::stateColor(sessionState, isDark);
             painter->setPen(Qt::NoPen);
             painter->setBrush(dotColor);
             int dotY = contentRect.center().y() - 2;
@@ -120,7 +153,12 @@ public:
     
     QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override {
         Q_UNUSED(option);
-        Q_UNUSED(index);
+        // Check if this is a section header
+        bool isHeader = index.data(Qt::UserRole + 4).toBool();
+        if (isHeader) {
+            // Headers are shorter with top padding
+            return QSize(200, 28);
+        }
         // Row height: 8pt vertical padding * 2 + text height ≈ 36px
         return QSize(200, 36);
     }
@@ -234,12 +272,16 @@ void SessionListWidget::setupUi() {
             background-color: transparent;
         }
     )");
-    connect(m_listWidget, &QListWidget::itemClicked, 
+    connect(m_listWidget, &QListWidget::itemClicked,
             this, &SessionListWidget::onItemClicked);
+
+    m_listWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_listWidget, &QListWidget::customContextMenuRequested,
+            this, &SessionListWidget::showContextMenu);
     
-    m_emptyLabel = new QLabel("No sessions yet.\nCreate a new one to get started.", this);
+    m_emptyLabel = new QLabel("No sessions yet.\nPress Ctrl+N to create one.", this);
     m_emptyLabel->setAlignment(Qt::AlignCenter);
-    m_emptyLabel->setStyleSheet("color: palette(placeholderText); padding: 24px;");
+    m_emptyLabel->setStyleSheet("color: palette(placeholderText); font-size: 15px; padding: 48px 24px;");
     m_emptyLabel->setWordWrap(true);
     
     layout->addWidget(header);
@@ -337,7 +379,8 @@ void SessionListWidget::populateList() {
     m_sessionIndexMap.clear();
     
     QList<Session> sessions = m_repository->getAllSessions();
-    
+    m_cachedSessions = sessions;
+
     if (sessions.isEmpty()) {
         m_listWidget->setVisible(false);
         m_emptyLabel->setVisible(true);
@@ -407,19 +450,19 @@ void SessionListWidget::populateList() {
 }
 
 void SessionListWidget::addSectionHeader(const QString& title) {
-    auto* headerItem = new QListWidgetItem(title, m_listWidget);
+    auto* headerItem = new QListWidgetItem(title.toUpper(), m_listWidget);
     headerItem->setFlags(Qt::NoItemFlags);  // Not selectable
     headerItem->setData(Qt::UserRole + 4, true);  // Mark as header
     
-    // Style the header
+    // Style the header - 10pt semibold, uppercase, secondary color
     QFont headerFont = headerItem->font();
-    headerFont.setPointSize(11);
+    headerFont.setPointSize(10);
     headerFont.setWeight(QFont::DemiBold);
     headerItem->setFont(headerFont);
     
-    // Use secondary text color with some padding
+    // Use AppColors::textSecondary for proper theming
     bool isDark = palette().window().color().lightness() < 128;
-    QColor headerColor = isDark ? QColor(160, 160, 160) : QColor(100, 100, 100);
+    QColor headerColor = AppColors::textSecondary(isDark);
     headerItem->setForeground(headerColor);
 }
 
@@ -435,6 +478,7 @@ void SessionListWidget::updateSessionItem(QListWidgetItem* item, const Session& 
     item->setData(Qt::UserRole + 1, STATE_ICONS.value(session.state, ":/icons/unknown.svg"));
     item->setData(Qt::UserRole + 2, stateToText(session.state));
     item->setData(Qt::UserRole + 3, session.isViewed());  // For custom delegate
+    item->setData(Qt::UserRole + 5, static_cast<int>(session.state));  // For state-colored indicator
     item->setToolTip(QString("%1\n\nState: %2\nCreated: %3")
                          .arg(session.prompt)
                          .arg(stateToText(session.state))
@@ -452,15 +496,25 @@ void SessionListWidget::selectSession(int index) {
 
 void SessionListWidget::navigateUp() {
     int current = m_listWidget->currentRow();
-    if (current > 0) {
-        m_listWidget->setCurrentRow(current - 1);
+    int target = current - 1;
+    // Skip header items
+    while (target >= 0 && m_listWidget->item(target)->data(Qt::UserRole + 4).toBool()) {
+        target--;
+    }
+    if (target >= 0) {
+        m_listWidget->setCurrentRow(target);
     }
 }
 
 void SessionListWidget::navigateDown() {
     int current = m_listWidget->currentRow();
-    if (current < m_listWidget->count() - 1) {
-        m_listWidget->setCurrentRow(current + 1);
+    int target = current + 1;
+    // Skip header items
+    while (target < m_listWidget->count() && m_listWidget->item(target)->data(Qt::UserRole + 4).toBool()) {
+        target++;
+    }
+    if (target < m_listWidget->count()) {
+        m_listWidget->setCurrentRow(target);
     }
 }
 
@@ -583,7 +637,10 @@ void SessionListWidget::applySearchFilter() {
     }
     
     QString searchLower = m_searchText.toLower();
-    QList<Session> sessions = m_repository->getAllSessions();
+    if (m_cachedSessions.isEmpty()) {
+        m_cachedSessions = m_repository->getAllSessions();
+    }
+    const QList<Session>& sessions = m_cachedSessions;
     
     // Track which section headers should be visible
     bool currentSectionHasVisibleItems = false;
@@ -639,10 +696,29 @@ void SessionListWidget::applySearchFilter() {
         m_emptyLabel->setVisible(true);
         m_listWidget->setVisible(false);
     } else {
-        m_emptyLabel->setText("No sessions yet.\nCreate a new one to get started.");
+        m_emptyLabel->setText("No sessions yet.\nPress Ctrl+N to create one.");
         m_emptyLabel->setVisible(sessions.isEmpty());
         m_listWidget->setVisible(!sessions.isEmpty());
     }
+}
+
+void SessionListWidget::showContextMenu(const QPoint& pos) {
+    QListWidgetItem* item = m_listWidget->itemAt(pos);
+    if (!item || item->data(Qt::UserRole + 4).toBool()) return;
+
+    QString sessionId = item->data(Qt::UserRole).toString();
+    QMenu menu(this);
+    menu.addAction("Open in Browser", [this, sessionId]() {
+        emit openInBrowserRequested(sessionId);
+    });
+    menu.addAction("Copy Session ID", [sessionId]() {
+        QApplication::clipboard()->setText(sessionId);
+    });
+    menu.addSeparator();
+    menu.addAction("Refresh", [this]() {
+        refresh();
+    });
+    menu.exec(m_listWidget->mapToGlobal(pos));
 }
 
 bool SessionListWidget::sessionMatchesSearch(const Session& session) const {

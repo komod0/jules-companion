@@ -111,6 +111,30 @@ WaveWidget::~WaveWidget() {
     }
 }
 
+void WaveWidget::releaseResources() {
+    if (!m_initialized) return;
+
+    makeCurrent();
+
+    m_vao.destroy();
+    m_vertexBuffer.destroy();
+
+    if (m_uniformBuffer) {
+        glDeleteBuffers(1, &m_uniformBuffer);
+        m_uniformBuffer = 0;
+    }
+
+    m_program.reset();
+
+    doneCurrent();
+
+    m_initialized = false;
+    m_needsReinit = true;
+    m_shadersValid = false;
+
+    qDebug() << "[WaveWidget] Resources released for memory savings";
+}
+
 bool WaveWidget::initialize() {
     if (m_initialized) return true;
     
@@ -225,6 +249,11 @@ void WaveWidget::resizeGL(int w, int h) {
 }
 
 void WaveWidget::paintGL() {
+    if (m_needsReinit) {
+        initialize();
+        m_needsReinit = false;
+    }
+
     if (!m_initialized || !m_shadersValid) return;
     
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);

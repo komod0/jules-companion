@@ -12,6 +12,8 @@
 
 namespace jules {
 
+class FilenameAutocompleteManager;
+
 class NewSessionDialog : public QDialog {
     Q_OBJECT
 
@@ -33,6 +35,7 @@ public:
 
     bool isValid() const;
     void savePreferences();
+    void setAutocompleteManager(FilenameAutocompleteManager* manager);
 
 signals:
     void sessionRequested(const Source& source, const QString& branch, const QString& prompt);
@@ -57,6 +60,8 @@ private:
     QTextEdit* m_promptEdit;
     QDialogButtonBox* m_buttonBox;
     QLabel* m_errorLabel;
+
+    FilenameAutocompleteManager* m_autocompleteManager = nullptr;
 
     static const QString SETTINGS_LAST_SOURCE;
     static const QString SETTINGS_LAST_BRANCHES;

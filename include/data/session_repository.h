@@ -35,6 +35,10 @@ public:
     QList<CachedDiff> getDiffs(const QString& sessionId);
     bool hasDiffs(const QString& sessionId);
     bool deleteDiffs(const QString& sessionId);
+    
+    // Cache management
+    int cachedSessionCount() const;
+    bool clearAllCachedData();
 
 signals:
     void sessionChanged(const QString& id);

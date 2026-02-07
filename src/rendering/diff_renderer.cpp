@@ -1,6 +1,8 @@
 #include "rendering/diff_renderer.h"
+#include "rendering/shared_syntax_cache.h"
 #include "rendering/font_atlas.h"
 #include "highlighting/syntax_highlighter.h"
+#include "data/settings_manager.h"
 
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
@@ -9,7 +11,6 @@
 #include <algorithm>
 #include <cmath>
 #include <sstream>
-#include <regex>
 #include <mutex>
 #include <future>
 
@@ -18,17 +19,68 @@ namespace jules {
 namespace {
 
 struct DiffColors {
-    RGBA addedBg{0.161f, 0.251f, 0.165f, 1.0f};
-    RGBA removedBg{0.314f, 0.161f, 0.165f, 1.0f};
-    RGBA contextBg{0.0f, 0.0f, 0.0f, 0.0f};
-    RGBA headerBg{0.118f, 0.118f, 0.118f, 1.0f};
-    RGBA textDefault{0.9f, 0.9f, 0.9f, 1.0f};
-    RGBA gutterText{0.5f, 0.5f, 0.5f, 1.0f};
-    RGBA gutterBg{0.08f, 0.08f, 0.08f, 1.0f};
-    RGBA sectionBorder{0.25f, 0.25f, 0.25f, 1.0f};
-    RGBA selectionBg{0.3f, 0.4f, 0.6f, 0.5f};
-    RGBA highlightBg{0.4f, 0.4f, 0.2f, 0.5f};
+    RGBA addedBg;
+    RGBA removedBg;
+    RGBA contextBg;
+    RGBA headerBg;
+    RGBA textDefault;
+    RGBA gutterText;
+    RGBA gutterBg;
+    RGBA sectionBorder;
+    RGBA selectionBg;
+    RGBA highlightBg;
+    RGBA statsAddedText;
+    RGBA statsAddedBg;
+    RGBA statsRemovedText;
+    RGBA statsRemovedBg;
+    RGBA inlineAddedBg;
+    RGBA inlineRemovedBg;
+    float contentBgValue = 0.05f; // used for the content area background
 };
+
+DiffColors createDarkColors() {
+    DiffColors c;
+    c.addedBg       = {0.424f, 0.749f, 0.263f, 0.15f};
+    c.removedBg     = {1.0f, 0.451f, 0.514f, 0.15f};
+    c.contextBg     = {0.0f, 0.0f, 0.0f, 0.0f};
+    c.headerBg      = {0.118f, 0.118f, 0.118f, 1.0f};
+    c.textDefault   = {0.9f, 0.9f, 0.9f, 1.0f};
+    c.gutterText    = {0.5f, 0.5f, 0.5f, 1.0f};
+    c.gutterBg      = {0.08f, 0.08f, 0.08f, 1.0f};
+    c.sectionBorder = {0.25f, 0.25f, 0.25f, 1.0f};
+    c.selectionBg   = {0.3f, 0.4f, 0.6f, 0.5f};
+    c.highlightBg   = {0.4f, 0.4f, 0.2f, 0.5f};
+    c.statsAddedText   = {0.502f, 0.969f, 0.588f, 1.0f};
+    c.statsAddedBg     = {0.502f, 0.969f, 0.588f, 0.15f};
+    c.statsRemovedText = {1.0f, 0.404f, 0.404f, 1.0f};
+    c.statsRemovedBg   = {1.0f, 0.404f, 0.404f, 0.15f};
+    c.inlineAddedBg    = {0.424f, 0.749f, 0.263f, 0.35f};
+    c.inlineRemovedBg  = {1.0f, 0.451f, 0.514f, 0.35f};
+    c.contentBgValue   = 0.05f;
+    return c;
+}
+
+DiffColors createLightColors() {
+    DiffColors c;
+    c.addedBg       = {0.075f, 0.6f, 0.086f, 0.12f};
+    c.removedBg     = {1.0f, 0.063f, 0.031f, 0.10f};
+    c.contextBg     = {0.0f, 0.0f, 0.0f, 0.0f};
+    c.headerBg      = {0.96f, 0.96f, 0.965f, 1.0f};
+    c.textDefault   = {0.114f, 0.114f, 0.122f, 1.0f};
+    c.gutterText    = {0.43f, 0.43f, 0.45f, 1.0f};
+    c.gutterBg      = {0.91f, 0.91f, 0.93f, 1.0f};
+    c.sectionBorder = {0.82f, 0.82f, 0.84f, 1.0f};
+    c.selectionBg   = {0.3f, 0.4f, 0.6f, 0.3f};
+    c.highlightBg   = {0.4f, 0.4f, 0.2f, 0.3f};
+    c.statsAddedText   = {0.075f, 0.6f, 0.086f, 1.0f};
+    c.statsAddedBg     = {0.075f, 0.6f, 0.086f, 0.15f};
+    c.statsRemovedText = {1.0f, 0.063f, 0.031f, 1.0f};
+    c.statsRemovedBg   = {1.0f, 0.063f, 0.031f, 0.15f};
+    c.inlineAddedBg    = {0.075f, 0.6f, 0.086f, 0.25f};
+    c.inlineRemovedBg  = {1.0f, 0.063f, 0.031f, 0.22f};
+    c.contentBgValue   = 1.0f;
+    return c;
+}
 
 struct LocalDiffLine {
     std::string content;
@@ -46,6 +98,47 @@ struct ParsedPatchResult {
     std::string filename;
 };
 
+bool parseHunkHeader(const std::string& line, int& oldLine, int& newLine) {
+    // line format: @@ -OLD[,COUNT] +NEW[,COUNT] @@...
+    if (line.size() < 8 || line[0] != '@' || line[1] != '@' || line[2] != ' ' || line[3] != '-')
+        return false;
+
+    size_t pos = 4;
+    // Parse old line number
+    size_t numStart = pos;
+    while (pos < line.size() && line[pos] >= '0' && line[pos] <= '9') ++pos;
+    if (pos == numStart) return false;
+    oldLine = std::stoi(line.substr(numStart, pos - numStart));
+
+    // Skip optional ,count
+    if (pos < line.size() && line[pos] == ',') {
+        ++pos;
+        while (pos < line.size() && line[pos] >= '0' && line[pos] <= '9') ++pos;
+    }
+
+    // Expect " +"
+    if (pos + 1 >= line.size() || line[pos] != ' ' || line[pos + 1] != '+') return false;
+    pos += 2;
+
+    // Parse new line number
+    numStart = pos;
+    while (pos < line.size() && line[pos] >= '0' && line[pos] <= '9') ++pos;
+    if (pos == numStart) return false;
+    newLine = std::stoi(line.substr(numStart, pos - numStart));
+
+    // Skip optional ,count
+    if (pos < line.size() && line[pos] == ',') {
+        ++pos;
+        while (pos < line.size() && line[pos] >= '0' && line[pos] <= '9') ++pos;
+    }
+
+    // Should have " @@" next
+    if (pos + 2 >= line.size() || line[pos] != ' ' || line[pos + 1] != '@' || line[pos + 2] != '@')
+        return false;
+
+    return true;
+}
+
 ParsedPatchResult parsePatch(const std::string& patch, const std::string& language,
                              const std::string& filename) {
     ParsedPatchResult result;
@@ -58,22 +151,20 @@ ParsedPatchResult parsePatch(const std::string& patch, const std::string& langua
     int newLineNum = 0;
     bool inHunk = false;
     
-    std::regex hunkHeaderRegex(R"(@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@.*)");
-    
     while (std::getline(stream, line)) {
         if (line.empty()) continue;
-        
-        if (line.rfind("diff --git", 0) == 0 || 
+
+        if (line.rfind("diff --git", 0) == 0 ||
             line.rfind("index ", 0) == 0 ||
             line.rfind("--- ", 0) == 0 ||
             line.rfind("+++ ", 0) == 0) {
             continue;
         }
-        
-        std::smatch match;
-        if (std::regex_match(line, match, hunkHeaderRegex)) {
-            oldLineNum = std::stoi(match[1].str());
-            newLineNum = std::stoi(match[2].str());
+
+        int parsedOld = 0, parsedNew = 0;
+        if (parseHunkHeader(line, parsedOld, parsedNew)) {
+            oldLineNum = parsedOld;
+            newLineNum = parsedNew;
             inHunk = true;
             
             LocalDiffLine hunkLine;
@@ -114,7 +205,44 @@ ParsedPatchResult parsePatch(const std::string& patch, const std::string& langua
         
         result.lines.push_back(diffLine);
     }
-    
+
+    // Compute character-level inline diffs for paired removed/added lines
+    for (size_t i = 0; i + 1 < result.lines.size(); ++i) {
+        if (result.lines[i].type == DiffLineType::Removed &&
+            result.lines[i + 1].type == DiffLineType::Added) {
+            const std::string& oldText = result.lines[i].content;
+            const std::string& newText = result.lines[i + 1].content;
+
+            // Find longest common prefix
+            size_t prefixLen = 0;
+            size_t minLen = std::min(oldText.size(), newText.size());
+            while (prefixLen < minLen && oldText[prefixLen] == newText[prefixLen]) {
+                ++prefixLen;
+            }
+
+            // Find longest common suffix (not overlapping prefix)
+            size_t suffixLen = 0;
+            while (suffixLen < minLen - prefixLen &&
+                   oldText[oldText.size() - 1 - suffixLen] == newText[newText.size() - 1 - suffixLen]) {
+                ++suffixLen;
+            }
+
+            // Mark the changed middle range on each line
+            size_t oldChangeEnd = oldText.size() - suffixLen;
+            size_t newChangeEnd = newText.size() - suffixLen;
+
+            if (prefixLen < oldChangeEnd) {
+                result.lines[i].tokenChanges.push_back({prefixLen, oldChangeEnd});
+            }
+            if (prefixLen < newChangeEnd) {
+                result.lines[i + 1].tokenChanges.push_back({prefixLen, newChangeEnd});
+            }
+
+            // Skip the added line since it's already been paired
+            ++i;
+        }
+    }
+
     return result;
 }
 
@@ -122,7 +250,7 @@ ParsedPatchResult parsePatch(const std::string& patch, const std::string& langua
 
 class DiffRenderer::Impl {
 public:
-    Impl() = default;
+    Impl() : m_colors(createDarkColors()) {}
     ~Impl() = default;
     
     bool initialize() {
@@ -139,7 +267,8 @@ public:
         }
         
         m_fontAtlas = std::make_unique<FontAtlas>();
-        if (!m_fontAtlas->initialize(12.0f, m_devicePixelRatio)) {
+        float fontSize = static_cast<float>(SettingsManager::instance().diffFontSize());
+        if (!m_fontAtlas->initialize(fontSize, m_devicePixelRatio)) {
             qWarning() << "DiffRenderer: Failed to initialize font atlas";
             return false;
         }
@@ -190,14 +319,24 @@ public:
             const auto& section = sections[sectionIdx];
             
             auto parseResult = parsePatch(section.patch, section.language, section.filename);
-            
+
+            // Detect binary/empty sections and inject a synthetic label line
+            if (parseResult.lines.empty()) {
+                LocalDiffLine binaryLine;
+                binaryLine.content = "Binary file";
+                binaryLine.type = DiffLineType::Context;
+                parseResult.lines.push_back(binaryLine);
+            }
+
             ParsedDiffSection parsedSection;
             parsedSection.filename = section.filename;
             parsedSection.language = section.language;
             parsedSection.yOffset = currentY;
-            
+            parsedSection.isBinary = (parseResult.lines.size() == 1 &&
+                                      parseResult.lines[0].content == "Binary file");
+
             float maxLineWidth = 0.0f;
-            
+
             for (const auto& line : parseResult.lines) {
                 DiffLine diffLine;
                 diffLine.content = line.content;
@@ -325,9 +464,11 @@ public:
     
     RenderResult generateRenderData(float viewportTop, float viewportBottom) {
         RenderResult result;
-        
-        if (m_cachedViewportTop == viewportTop && 
-            m_cachedViewportBottom == viewportBottom &&
+
+        int snappedTop = static_cast<int>(viewportTop);
+        int snappedBottom = static_cast<int>(viewportBottom);
+        if (m_cachedSnappedTop == snappedTop &&
+            m_cachedSnappedBottom == snappedBottom &&
             !m_cacheInvalid) {
             result.textInstances = m_cachedTextInstances;
             result.boldInstances = m_cachedBoldInstances;
@@ -335,23 +476,23 @@ public:
             result.cacheHit = true;
             return result;
         }
-        
+
         m_cachedTextInstances.clear();
         m_cachedBoldInstances.clear();
         m_cachedRectInstances.clear();
-        
+
         generateBackgrounds(viewportTop, viewportBottom);
         generateText(viewportTop, viewportBottom);
-        
+
         result.textInstances = m_cachedTextInstances;
         result.boldInstances = m_cachedBoldInstances;
         result.rectInstances = m_cachedRectInstances;
         result.cacheHit = false;
-        
-        m_cachedViewportTop = viewportTop;
-        m_cachedViewportBottom = viewportBottom;
+
+        m_cachedSnappedTop = snappedTop;
+        m_cachedSnappedBottom = snappedBottom;
         m_cacheInvalid = false;
-        
+
         return result;
     }
     
@@ -386,6 +527,41 @@ public:
     void clearSelection() {
         m_hasSelection = false;
         invalidateCache();
+    }
+
+    void selectAll() {
+        if (m_sections.empty()) return;
+        m_selectionStart = {0, 0};
+        int totalLines = 0;
+        int lastLineLen = 0;
+        for (const auto& section : m_sections) {
+            for (const auto& line : section.lines) {
+                lastLineLen = static_cast<int>(line.content.size());
+                totalLines++;
+            }
+        }
+        m_selectionEnd = {totalLines - 1, lastLineLen};
+        m_hasSelection = true;
+        invalidateCache();
+    }
+
+    int sectionIndexAtY(float worldY) const {
+        for (size_t i = 0; i < m_sections.size(); ++i) {
+            const auto& section = m_sections[i];
+            float sectionTop = section.yOffset;
+            float sectionBottom = section.yOffset + section.height;
+            if (worldY >= sectionTop && worldY < sectionBottom) {
+                return static_cast<int>(i);
+            }
+        }
+        return -1;
+    }
+
+    std::string sectionFilename(int index) const {
+        if (index < 0 || index >= static_cast<int>(m_sections.size())) {
+            return {};
+        }
+        return m_sections[index].filename;
     }
     
     TextSelection selection() const {
@@ -443,7 +619,20 @@ public:
     bool syntaxHighlightingAvailable() const {
         return m_syntaxHighlighter && m_syntaxHighlighter->isInitialized();
     }
-    
+
+    void setSharedSyntaxCache(SharedSyntaxCache* cache) {
+        m_sharedSyntaxCache = cache;
+    }
+
+    void setDarkMode(bool isDark) {
+        if (m_isDark == isDark) return;
+        m_isDark = isDark;
+        m_colors = isDark ? createDarkColors() : createLightColors();
+        m_syntaxColorCache.clear();
+        parseSyntaxAsync();
+        invalidateCache();
+    }
+
     void invalidateCache() {
         m_cacheInvalid = true;
     }
@@ -469,23 +658,64 @@ private:
         if (!m_syntaxHighlighter || !m_syntaxHighlighter->isInitialized()) {
             return;
         }
-        
+
         m_syntaxColorCache.clear();
-        
+
         int globalLineIdx = 0;
         for (const auto& section : m_sections) {
             if (section.language.empty()) {
                 globalLineIdx += static_cast<int>(section.lines.size());
                 continue;
             }
-            
+
             std::string fullContent;
             for (const auto& line : section.lines) {
                 fullContent += line.content + "\n";
             }
-            
+
+            // Check shared cache first
+            std::size_t contentHash = std::hash<std::string>{}(fullContent);
+            bool cacheHit = false;
+
+            if (m_sharedSyntaxCache) {
+                SharedSyntaxCache::CacheKey cacheKey{contentHash, section.language, m_isDark};
+                auto cached = m_sharedSyntaxCache->get(cacheKey);
+                if (cached) {
+                    // Distribute cached per-line tokens into m_syntaxColorCache
+                    // The cached vector stores all tokens flattened; we need to re-split by line
+                    // Actually, the shared cache stores the full highlight tokens for the content block.
+                    // We process them the same way as fresh tokens below.
+                    cacheHit = true;
+
+                    // Rebuild line starts for distribution
+                    std::vector<size_t> lineStarts;
+                    lineStarts.push_back(0);
+                    for (size_t i = 0; i < fullContent.size(); ++i) {
+                        if (fullContent[i] == '\n') {
+                            lineStarts.push_back(i + 1);
+                        }
+                    }
+
+                    for (const auto& colorToken : *cached) {
+                        size_t lineIdx = std::upper_bound(lineStarts.begin(), lineStarts.end(),
+                            colorToken.start) - lineStarts.begin() - 1;
+
+                        if (lineIdx < section.lines.size()) {
+                            SyntaxColorToken localToken;
+                            localToken.start = colorToken.start - lineStarts[lineIdx];
+                            localToken.end = colorToken.end - lineStarts[lineIdx];
+                            localToken.color = colorToken.color;
+                            m_syntaxColorCache[globalLineIdx + static_cast<int>(lineIdx)].push_back(localToken);
+                        }
+                    }
+
+                    globalLineIdx += static_cast<int>(section.lines.size());
+                    continue;
+                }
+            }
+
             auto tokens = m_syntaxHighlighter->highlight(fullContent, section.language);
-            
+
             std::vector<size_t> lineStarts;
             lineStarts.push_back(0);
             for (size_t i = 0; i < fullContent.size(); ++i) {
@@ -493,11 +723,17 @@ private:
                     lineStarts.push_back(i + 1);
                 }
             }
-            
+
+            // Build tokens for shared cache storage (absolute offsets, normalized colors)
+            std::vector<SyntaxColorToken> cacheTokens;
+            if (m_sharedSyntaxCache) {
+                cacheTokens.reserve(tokens.size());
+            }
+
             for (const auto& token : tokens) {
-                size_t lineIdx = std::upper_bound(lineStarts.begin(), lineStarts.end(), 
+                size_t lineIdx = std::upper_bound(lineStarts.begin(), lineStarts.end(),
                     token.start) - lineStarts.begin() - 1;
-                
+
                 if (lineIdx < section.lines.size()) {
                     SyntaxColorToken colorToken;
                     colorToken.start = token.start - lineStarts[lineIdx];
@@ -508,11 +744,31 @@ private:
                         token.color.b / 255.0f,
                         token.color.a / 255.0f
                     };
-                    
+
                     m_syntaxColorCache[globalLineIdx + static_cast<int>(lineIdx)].push_back(colorToken);
                 }
+
+                // Store with absolute offsets and normalized colors for the shared cache
+                if (m_sharedSyntaxCache) {
+                    SyntaxColorToken absToken;
+                    absToken.start = token.start;
+                    absToken.end = token.end;
+                    absToken.color = {
+                        token.color.r / 255.0f,
+                        token.color.g / 255.0f,
+                        token.color.b / 255.0f,
+                        token.color.a / 255.0f
+                    };
+                    cacheTokens.push_back(absToken);
+                }
             }
-            
+
+            // Store in shared cache
+            if (m_sharedSyntaxCache) {
+                SharedSyntaxCache::CacheKey cacheKey{contentHash, section.language, m_isDark};
+                m_sharedSyntaxCache->put(cacheKey, std::move(cacheTokens));
+            }
+
             globalLineIdx += static_cast<int>(section.lines.size());
         }
     }
@@ -555,9 +811,9 @@ private:
             contentBg.originY = contentY;
             contentBg.sizeX = sectionWidth - 2.0f;
             contentBg.sizeY = contentHeight;
-            contentBg.colorR = 0.05f;
-            contentBg.colorG = 0.05f;
-            contentBg.colorB = 0.05f;
+            contentBg.colorR = m_colors.contentBgValue;
+            contentBg.colorG = m_colors.contentBgValue;
+            contentBg.colorB = m_colors.contentBgValue;
             contentBg.colorA = 1.0f;
             m_cachedRectInstances.push_back(contentBg);
             
@@ -598,7 +854,7 @@ private:
                     lineBg.colorB = bgColor.b;
                     lineBg.colorA = bgColor.a;
                     m_cachedRectInstances.push_back(lineBg);
-                    
+
                     DiffRectInstance gutterLineBg;
                     gutterLineBg.originX = DiffRenderer::kHorizontalPadding + 1.0f;
                     gutterLineBg.originY = lineY;
@@ -610,6 +866,33 @@ private:
                     gutterLineBg.colorA = bgColor.a;
                     m_cachedRectInstances.push_back(gutterLineBg);
                 }
+
+                // Render inline change highlights on top of line backgrounds
+                if (!line.tokenChanges.empty()) {
+                    RGBA inlineColor = (line.type == DiffLineType::Added)
+                        ? m_colors.inlineAddedBg
+                        : m_colors.inlineRemovedBg;
+
+                    float sectionScrollX = horizontalScroll(static_cast<int>(sectionIdx));
+                    float textStartX = DiffRenderer::kHorizontalPadding +
+                        DiffRenderer::kGutterWidth + 10.0f - sectionScrollX;
+
+                    for (const auto& [start, end] : line.tokenChanges) {
+                        float rectX = textStartX + static_cast<float>(start) * m_monoAdvance;
+                        float rectW = static_cast<float>(end - start) * m_monoAdvance;
+
+                        DiffRectInstance inlineBg;
+                        inlineBg.originX = rectX;
+                        inlineBg.originY = lineY;
+                        inlineBg.sizeX = rectW;
+                        inlineBg.sizeY = m_lineHeight;
+                        inlineBg.colorR = inlineColor.r;
+                        inlineBg.colorG = inlineColor.g;
+                        inlineBg.colorB = inlineColor.b;
+                        inlineBg.colorA = inlineColor.a;
+                        m_cachedRectInstances.push_back(inlineBg);
+                    }
+                }
             }
         }
     }
@@ -617,8 +900,7 @@ private:
     void generateText(float viewportTop, float viewportBottom) {
         if (!m_fontAtlas || !m_fontAtlas->isValid()) return;
         
-        float baselineRatio = 0.78f;
-        float textVerticalOffset = m_lineHeight * 0.25f;
+        float baselineRatio = 0.75f;
         
         for (size_t sectionIdx = 0; sectionIdx < m_sections.size(); ++sectionIdx) {
             const auto& section = m_sections[sectionIdx];
@@ -661,6 +943,113 @@ private:
                 headerX += glyph->advance;
             }
             
+            // Render stats badges at the right side of the header
+            float badgeRightEdge = m_viewportWidth - DiffRenderer::kHorizontalPadding - 8.0f;
+            float badgePadX = 6.0f;  // Horizontal padding inside badge
+            float badgePadY = 2.0f;  // Vertical padding inside badge
+            float badgeSpacing = 6.0f; // Space between badges
+            float badgeCornerRadius = 3.0f;
+            
+            // Render removed badge first (it goes to the left of added)
+            if (section.linesRemoved > 0) {
+                std::string removedStr = "-" + std::to_string(section.linesRemoved);
+                float textWidth = removedStr.length() * m_monoAdvance;
+                float badgeWidth = textWidth + badgePadX * 2.0f;
+                float badgeX = badgeRightEdge - badgeWidth;
+                float badgeHeight = m_lineHeight * 0.7f;
+                float badgeY = headerY + (DiffRenderer::kHeaderHeight - badgeHeight) / 2.0f;
+                
+                // Badge background
+                DiffRectInstance badgeBg;
+                badgeBg.originX = badgeX;
+                badgeBg.originY = badgeY;
+                badgeBg.sizeX = badgeWidth;
+                badgeBg.sizeY = badgeHeight;
+                badgeBg.colorR = m_colors.statsRemovedBg.r;
+                badgeBg.colorG = m_colors.statsRemovedBg.g;
+                badgeBg.colorB = m_colors.statsRemovedBg.b;
+                badgeBg.colorA = m_colors.statsRemovedBg.a;
+                badgeBg.cornerRadius = badgeCornerRadius;
+                badgeBg.borderWidth = 0.0f;
+                badgeBg.borderColorR = badgeBg.borderColorG = badgeBg.borderColorB = badgeBg.borderColorA = 0.0f;
+                m_cachedRectInstances.push_back(badgeBg);
+                
+                // Badge text
+                float textX = badgeX + badgePadX;
+                float textBaselineY = badgeY + badgeHeight * 0.72f;
+                for (char c : removedStr) {
+                    const auto* glyph = m_fontAtlas->getASCIIGlyph(c);
+                    if (!glyph) { textX += m_monoAdvance; continue; }
+                    
+                    DiffInstanceData inst;
+                    inst.originX = textX;
+                    inst.originY = textBaselineY - glyph->bearing.y;
+                    inst.sizeX = glyph->size.x;
+                    inst.sizeY = glyph->size.y;
+                    inst.uvMinX = glyph->uvMin.x;
+                    inst.uvMinY = glyph->uvMin.y;
+                    inst.uvMaxX = glyph->uvMax.x;
+                    inst.uvMaxY = glyph->uvMax.y;
+                    inst.colorR = m_colors.statsRemovedText.r;
+                    inst.colorG = m_colors.statsRemovedText.g;
+                    inst.colorB = m_colors.statsRemovedText.b;
+                    inst.colorA = m_colors.statsRemovedText.a;
+                    m_cachedBoldInstances.push_back(inst);
+                    textX += glyph->advance;
+                }
+                
+                badgeRightEdge = badgeX - badgeSpacing;
+            }
+            
+            // Render added badge
+            if (section.linesAdded > 0) {
+                std::string addedStr = "+" + std::to_string(section.linesAdded);
+                float textWidth = addedStr.length() * m_monoAdvance;
+                float badgeWidth = textWidth + badgePadX * 2.0f;
+                float badgeX = badgeRightEdge - badgeWidth;
+                float badgeHeight = m_lineHeight * 0.7f;
+                float badgeY = headerY + (DiffRenderer::kHeaderHeight - badgeHeight) / 2.0f;
+                
+                // Badge background
+                DiffRectInstance badgeBg;
+                badgeBg.originX = badgeX;
+                badgeBg.originY = badgeY;
+                badgeBg.sizeX = badgeWidth;
+                badgeBg.sizeY = badgeHeight;
+                badgeBg.colorR = m_colors.statsAddedBg.r;
+                badgeBg.colorG = m_colors.statsAddedBg.g;
+                badgeBg.colorB = m_colors.statsAddedBg.b;
+                badgeBg.colorA = m_colors.statsAddedBg.a;
+                badgeBg.cornerRadius = badgeCornerRadius;
+                badgeBg.borderWidth = 0.0f;
+                badgeBg.borderColorR = badgeBg.borderColorG = badgeBg.borderColorB = badgeBg.borderColorA = 0.0f;
+                m_cachedRectInstances.push_back(badgeBg);
+                
+                // Badge text
+                float textX = badgeX + badgePadX;
+                float textBaselineY = badgeY + badgeHeight * 0.72f;
+                for (char c : addedStr) {
+                    const auto* glyph = m_fontAtlas->getASCIIGlyph(c);
+                    if (!glyph) { textX += m_monoAdvance; continue; }
+                    
+                    DiffInstanceData inst;
+                    inst.originX = textX;
+                    inst.originY = textBaselineY - glyph->bearing.y;
+                    inst.sizeX = glyph->size.x;
+                    inst.sizeY = glyph->size.y;
+                    inst.uvMinX = glyph->uvMin.x;
+                    inst.uvMinY = glyph->uvMin.y;
+                    inst.uvMaxX = glyph->uvMax.x;
+                    inst.uvMaxY = glyph->uvMax.y;
+                    inst.colorR = m_colors.statsAddedText.r;
+                    inst.colorG = m_colors.statsAddedText.g;
+                    inst.colorB = m_colors.statsAddedText.b;
+                    inst.colorA = m_colors.statsAddedText.a;
+                    m_cachedBoldInstances.push_back(inst);
+                    textX += glyph->advance;
+                }
+            }
+            
             float sectionScrollX = horizontalScroll(static_cast<int>(sectionIdx));
             float contentY = section.yOffset + DiffRenderer::kHeaderHeight;
             
@@ -677,7 +1066,7 @@ private:
                     continue;
                 }
                 
-                float baselineY = std::floor(lineY + (m_lineHeight * baselineRatio) + textVerticalOffset);
+                float baselineY = std::floor(lineY + m_lineHeight * baselineRatio);
                 
                 float gutterX = DiffRenderer::kHorizontalPadding + 4.0f;
                 if (line.oldLineNumber) {
@@ -761,10 +1150,14 @@ private:
                     }
                     
                     RGBA textColor = m_colors.textDefault;
-                    for (const auto& token : syntaxColors) {
-                        if (charIdx >= token.start && charIdx < token.end) {
-                            textColor = token.color;
-                            break;
+                    if (!syntaxColors.empty()) {
+                        auto it = std::upper_bound(syntaxColors.begin(), syntaxColors.end(), charIdx,
+                            [](size_t idx, const SyntaxColorToken& tok) { return idx < tok.start; });
+                        if (it != syntaxColors.begin()) {
+                            --it;
+                            if (charIdx < it->end) {
+                                textColor = it->color;
+                            }
                         }
                     }
                     
@@ -794,6 +1187,7 @@ private:
     
     std::unique_ptr<FontAtlas> m_fontAtlas;
     std::unique_ptr<highlighting::SyntaxHighlighter> m_syntaxHighlighter;
+    SharedSyntaxCache* m_sharedSyntaxCache = nullptr;
     
     int m_viewportWidth = 800;
     int m_viewportHeight = 600;
@@ -811,7 +1205,8 @@ private:
     std::unordered_map<int, float> m_horizontalScrolls;
     
     DiffColors m_colors;
-    
+    bool m_isDark = true;
+
     TextPosition m_selectionStart;
     TextPosition m_selectionEnd;
     bool m_hasSelection = false;
@@ -819,8 +1214,8 @@ private:
     std::vector<DiffInstanceData> m_cachedTextInstances;
     std::vector<DiffInstanceData> m_cachedBoldInstances;
     std::vector<DiffRectInstance> m_cachedRectInstances;
-    float m_cachedViewportTop = -1.0f;
-    float m_cachedViewportBottom = -1.0f;
+    int m_cachedSnappedTop = -1;
+    int m_cachedSnappedBottom = -1;
     bool m_cacheInvalid = true;
 };
 
@@ -874,11 +1269,23 @@ void DiffRenderer::setSelection(const TextPosition& start, const TextPosition& e
 }
 
 void DiffRenderer::clearSelection() { m_impl->clearSelection(); }
+void DiffRenderer::selectAll() { m_impl->selectAll(); }
 TextSelection DiffRenderer::selection() const { return m_impl->selection(); }
 std::string DiffRenderer::selectedText() const { return m_impl->selectedText(); }
 
+int DiffRenderer::sectionIndexAtY(float worldY) const { return m_impl->sectionIndexAtY(worldY); }
+std::string DiffRenderer::sectionFilename(int sectionIndex) const { return m_impl->sectionFilename(sectionIndex); }
+
 bool DiffRenderer::syntaxHighlightingAvailable() const {
     return m_impl->syntaxHighlightingAvailable();
+}
+
+void DiffRenderer::setSharedSyntaxCache(SharedSyntaxCache* cache) {
+    m_impl->setSharedSyntaxCache(cache);
+}
+
+void DiffRenderer::setDarkMode(bool isDark) {
+    m_impl->setDarkMode(isDark);
 }
 
 void DiffRenderer::invalidateCache() { m_impl->invalidateCache(); }

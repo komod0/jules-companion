@@ -82,14 +82,53 @@ struct FontAtlas::Impl {
         baseFontSize = fontSize;
         scale = displayScale;
         
-        // Try common monospace font paths
+        // Try common monospace font paths (premium fonts first, then fallbacks)
+        // Includes Nerd Font variants (common on Arch/distros with nerd-fonts packages)
         const char* fontPaths[] = {
+            // JetBrains Mono (standard)
+            "/usr/share/fonts/TTF/JetBrainsMono-Regular.ttf",
+            "/usr/share/fonts/jetbrains-mono/JetBrainsMono-Regular.ttf",
+            "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Regular.ttf",
+            "/usr/share/fonts/OTF/JetBrainsMono-Regular.otf",
+            "/usr/local/share/fonts/JetBrainsMono-Regular.ttf",
+            // JetBrains Mono (Nerd Font variants)
+            "/usr/share/fonts/TTF/JetBrainsMonoNerdFontMono-Regular.ttf",
+            "/usr/share/fonts/TTF/JetBrainsMonoNerdFont-Regular.ttf",
+            // Fira Code (standard)
+            "/usr/share/fonts/TTF/FiraCode-Regular.ttf",
+            "/usr/share/fonts/fira-code/FiraCode-Regular.ttf",
+            "/usr/share/fonts/truetype/fira-code/FiraCode-Regular.ttf",
+            "/usr/share/fonts/OTF/FiraCode-Regular.otf",
+            "/usr/local/share/fonts/FiraCode-Regular.ttf",
+            // Fira Code (Nerd Font variants)
+            "/usr/share/fonts/TTF/FiraCodeNerdFontMono-Regular.ttf",
+            "/usr/share/fonts/TTF/FiraCodeNerdFont-Regular.ttf",
+            // Cascadia Code
+            "/usr/share/fonts/TTF/CascadiaCode.ttf",
+            "/usr/share/fonts/cascadia-code/CascadiaCode.ttf",
+            "/usr/share/fonts/truetype/cascadia-code/CascadiaCode.ttf",
+            "/usr/share/fonts/OTF/CascadiaCode.otf",
+            "/usr/local/share/fonts/CascadiaCode.ttf",
+            // Source Code Pro
+            "/usr/share/fonts/TTF/SourceCodePro-Regular.ttf",
+            "/usr/share/fonts/adobe-source-code-pro/SourceCodePro-Regular.ttf",
+            "/usr/share/fonts/truetype/adobe-source-code-pro/SourceCodePro-Regular.ttf",
+            "/usr/share/fonts/OTF/SourceCodePro-Regular.otf",
+            "/usr/local/share/fonts/SourceCodePro-Regular.ttf",
+            // Hack
+            "/usr/share/fonts/TTF/Hack-Regular.ttf",
+            "/usr/share/fonts/hack/Hack-Regular.ttf",
+            "/usr/share/fonts/truetype/hack/Hack-Regular.ttf",
+            "/usr/local/share/fonts/Hack-Regular.ttf",
+            // DejaVu Sans Mono (fallback)
             "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
             "/usr/share/fonts/dejavu-sans-mono-fonts/DejaVuSansMono.ttf",
+            // Liberation Mono (fallback)
             "/usr/share/fonts/liberation-mono/LiberationMono-Regular.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
             "/usr/share/fonts/liberation/LiberationMono-Regular.ttf",
+            // Noto Sans Mono (fallback)
             "/usr/share/fonts/noto/NotoSansMono-Regular.ttf",
             "/usr/share/fonts/truetype/noto/NotoSansMono-Regular.ttf",
             "/usr/share/fonts/google-noto/NotoSansMono-Regular.ttf",
@@ -226,9 +265,11 @@ struct FontAtlas::Impl {
                 static_cast<float>(cellWidth) / scale,
                 static_cast<float>(cellHeight) / scale
             };
+            // Add padding to bearing so that the glyph quad is shifted up
+            // to compensate for the transparent padding rows at the top of the cell.
             desc.bearing = {
                 static_cast<float>(g->bitmap_left) / scale,
-                static_cast<float>(g->bitmap_top) / scale
+                static_cast<float>(g->bitmap_top + padding) / scale
             };
             desc.advance = static_cast<float>(g->advance.x >> 6) / scale;
             

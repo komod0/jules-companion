@@ -46,9 +46,12 @@ public:
     QString searchText() const;
     void clearSearch();
 
+    QLineEdit* searchField() const { return m_searchEdit; }
+
 signals:
     void sessionSelected(const QString& sessionId);
     void createNewRequested();
+    void openInBrowserRequested(const QString& sessionId);
     void refreshed();
 
 private slots:
@@ -58,6 +61,7 @@ private slots:
     void onItemClicked(QListWidgetItem* item);
     void onPollTimerTimeout();
     void onSearchTextChanged(const QString& text);
+    void showContextMenu(const QPoint& pos);
 
 private:
     void setupUi();
@@ -80,6 +84,7 @@ private:
     int m_pollingIntervalMs;
     QString m_searchText;
     QMap<QString, int> m_sessionIndexMap;
+    QList<Session> m_cachedSessions;
 };
 
 }

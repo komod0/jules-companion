@@ -1,4 +1,5 @@
 #include "ui/session_detail_widget.h"
+#include "ui/diff_panel_widget.h"
 #include "ui/app_colors.h"
 
 #include <QFrame>
@@ -9,6 +10,12 @@
 #include <QScrollArea>
 #include <QPainter>
 #include <QRegularExpression>
+#include <QSplitter>
+#include <QPropertyAnimation>
+#include <QInputDialog>
+#include <QResizeEvent>
+#include <QScrollBar>
+#include <QTimer>
 
 namespace jules {
 
@@ -25,23 +32,117 @@ const QMap<SessionState, QString> STATE_DISPLAY_TEXTS = {
     {SessionState::AwaitingUserFeedback, "Awaiting Your Input"},
     {SessionState::AwaitingPlanApproval, "Review Plan"}
 };
+
+// Helper widget for individual plan step with collapsible description
+class PlanStepWidget : public QWidget {
+public:
+    PlanStepWidget(const PlanStep& step, bool isDark, QWidget* parent = nullptr)
+        : QWidget(parent)
+        , m_expanded(false)
+        , m_descriptionWidget(nullptr)
+    {
+        auto* layout = new QVBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(0);
+
+        // Header row: dot + title + chevron
+        auto* headerWidget = new QWidget(this);
+        headerWidget->setCursor(Qt::PointingHandCursor);
+        auto* headerLayout = new QHBoxLayout(headerWidget);
+        headerLayout->setContentsMargins(8, 4, 8, 4);
+        headerLayout->setSpacing(8);
+
+        // Purple accent dot
+        auto* dotLabel = new QLabel(this);
+        dotLabel->setFixedSize(6, 6);
+        QColor accentColor = AppColors::accent(isDark);
+        dotLabel->setStyleSheet(QString(
+            "background-color: %1; border-radius: 3px;")
+            .arg(accentColor.name()));
+
+        // Step title
+        auto* titleLabel = new QLabel(step.title.value_or("Untitled Step"), this);
+        titleLabel->setWordWrap(false);
+        QFont titleFont = titleLabel->font();
+        titleFont.setPointSize(12);
+        titleLabel->setFont(titleFont);
+        titleLabel->setStyleSheet(QString("color: %1;").arg(AppColors::textPrimary(isDark).name()));
+
+        // Chevron indicator
+        m_chevronLabel = new QLabel(this);
+        m_chevronLabel->setText("▼");
+        m_chevronLabel->setStyleSheet(QString("color: %1; font-size: 8px;").arg(AppColors::textSecondary(isDark).name()));
+
+        headerLayout->addWidget(dotLabel);
+        headerLayout->addWidget(titleLabel, 1);
+        headerLayout->addWidget(m_chevronLabel);
+
+        layout->addWidget(headerWidget);
+
+        // Description (hidden by default)
+        if (step.description.has_value() && !step.description->isEmpty()) {
+            m_descriptionWidget = new QLabel(step.description.value(), this);
+            m_descriptionWidget->setWordWrap(true);
+            m_descriptionWidget->setContentsMargins(24, 8, 8, 8);  // Indent to align with title
+            QFont descFont = m_descriptionWidget->font();
+            descFont.setPointSize(11);
+            m_descriptionWidget->setFont(descFont);
+            m_descriptionWidget->setStyleSheet(QString("color: %1;").arg(AppColors::textSecondary(isDark).name()));
+            m_descriptionWidget->hide();
+            layout->addWidget(m_descriptionWidget);
+        }
+
+        // Click handler on header
+        headerWidget->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject* obj, QEvent* event) override {
+        if (event->type() == QEvent::MouseButtonRelease) {
+            toggleExpanded();
+            return true;
+        }
+        return QWidget::eventFilter(obj, event);
+    }
+
+private:
+    void toggleExpanded() {
+        m_expanded = !m_expanded;
+        m_chevronLabel->setText(m_expanded ? "▲" : "▼");
+        if (m_descriptionWidget) {
+            m_descriptionWidget->setVisible(m_expanded);
+        }
+    }
+
+    bool m_expanded;
+    QLabel* m_chevronLabel;
+    QLabel* m_descriptionWidget;
+};
+
 }
 
 SessionDetailWidget::SessionDetailWidget(QWidget* parent)
     : QWidget(parent)
+    , m_headerBar(nullptr)
     , m_titleLabel(nullptr)
-    , m_promptLabel(nullptr)
+    , m_subtitleLabel(nullptr)
     , m_stateLabel(nullptr)
-    , m_repoLabel(nullptr)
-    , m_branchLabel(nullptr)
-    , m_gitStatsLabel(nullptr)
+    , m_timeAgoLabel(nullptr)
     , m_emptyLabel(nullptr)
-    , m_activityList(nullptr)
+    , m_activityContainer(nullptr)
+    , m_activityLayout(nullptr)
     , m_openBrowserBtn(nullptr)
     , m_pullRequestBtn(nullptr)
     , m_contentWidget(nullptr)
+    , m_mainSplitter(nullptr)
+    , m_diffPanel(nullptr)
 {
     setupUi();
+
+    // Time-ago auto-refresh: update every 60 seconds
+    m_timeAgoTimer = new QTimer(this);
+    m_timeAgoTimer->setInterval(60000);
+    connect(m_timeAgoTimer, &QTimer::timeout, this, &SessionDetailWidget::updateTimeAgo);
 }
 
 SessionDetailWidget::~SessionDetailWidget() = default;
@@ -50,110 +151,120 @@ void SessionDetailWidget::setupUi() {
     auto* mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
-    
-    // Empty state label
-    m_emptyLabel = new QLabel("Select a session to view details", this);
+
+    // Empty state label - centered, larger, dimmed
+    m_emptyLabel = new QLabel("Select a session from the sidebar", this);
     m_emptyLabel->setAlignment(Qt::AlignCenter);
-    m_emptyLabel->setStyleSheet("color: palette(placeholderText); font-size: 16px; padding: 48px;");
-    
-    // Main content widget with scroll area
+    m_emptyLabel->setStyleSheet("color: palette(placeholderText); font-size: 18px; padding: 48px;");
+
+    // === Fixed Header Bar (above scroll area) ===
+    m_headerBar = new QWidget(this);
+    m_headerBar->setFixedHeight(56);
+
+    auto* headerBarLayout = new QHBoxLayout(m_headerBar);
+    headerBarLayout->setContentsMargins(16, 10, 16, 10);
+    headerBarLayout->setSpacing(12);
+
+    // Left side: title + subtitle
+    auto* leftVBox = new QVBoxLayout();
+    leftVBox->setContentsMargins(0, 0, 0, 0);
+    leftVBox->setSpacing(2);
+
+    m_titleLabel = new QLabel(m_headerBar);
+    QFont titleFont = m_titleLabel->font();
+    titleFont.setPointSize(13);
+    titleFont.setWeight(QFont::Medium);
+    m_titleLabel->setFont(titleFont);
+    m_titleLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+    m_subtitleLabel = new QLabel(m_headerBar);
+    QFont subtitleFont = m_subtitleLabel->font();
+    subtitleFont.setPointSize(11);
+    m_subtitleLabel->setFont(subtitleFont);
+    m_subtitleLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+    leftVBox->addWidget(m_titleLabel);
+    leftVBox->addWidget(m_subtitleLabel);
+
+    // Right side: state badge + time ago
+    auto* rightVBox = new QVBoxLayout();
+    rightVBox->setContentsMargins(0, 0, 0, 0);
+    rightVBox->setSpacing(2);
+    rightVBox->setAlignment(Qt::AlignTop | Qt::AlignRight);
+
+    m_stateLabel = new QLabel(m_headerBar);
+    m_stateLabel->setFixedHeight(24);
+    m_stateLabel->setAlignment(Qt::AlignRight);
+
+    m_timeAgoLabel = new QLabel(m_headerBar);
+    QFont timeFont = m_timeAgoLabel->font();
+    timeFont.setPointSize(11);
+    m_timeAgoLabel->setFont(timeFont);
+    m_timeAgoLabel->setAlignment(Qt::AlignRight);
+
+    rightVBox->addWidget(m_stateLabel);
+    rightVBox->addWidget(m_timeAgoLabel);
+
+    headerBarLayout->addLayout(leftVBox, 1);
+    headerBarLayout->addLayout(rightVBox);
+
+    // === Action Bar (plan approval / feedback) ===
+    m_actionBar = new QWidget(this);
+    auto* actionLayout = new QHBoxLayout(m_actionBar);
+    actionLayout->setContentsMargins(12, 8, 12, 8);
+    actionLayout->setSpacing(12);
+
+    m_approveButton = new QPushButton("Approve Plan", m_actionBar);
+    m_approveButton->setObjectName("approveButton");
+    m_feedbackButton = new QPushButton("Provide Feedback", m_actionBar);
+    m_feedbackButton->setObjectName("feedbackButton");
+
+    actionLayout->addStretch();
+    actionLayout->addWidget(m_approveButton);
+    actionLayout->addWidget(m_feedbackButton);
+
+    m_actionBar->hide();
+
+    // Connect action bar buttons
+    connect(m_approveButton, &QPushButton::clicked, this, [this]() {
+        if (m_session.has_value()) {
+            emit planApproved(m_session->id);
+        }
+    });
+    connect(m_feedbackButton, &QPushButton::clicked, this, [this]() {
+        if (!m_session.has_value()) return;
+        bool ok = false;
+        QString feedback = QInputDialog::getMultiLineText(
+            this, "Provide Feedback", "Enter your feedback:", QString(), &ok);
+        if (ok && !feedback.isEmpty()) {
+            emit feedbackProvided(m_session->id, feedback);
+        }
+    });
+
+    // === Scroll Area for activities ===
     auto* scrollArea = new QScrollArea(this);
+    m_scrollArea = scrollArea;
     scrollArea->setWidgetResizable(true);
     scrollArea->setFrameShape(QFrame::NoFrame);
     scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    
+
     m_contentWidget = new QWidget(scrollArea);
     scrollArea->setWidget(m_contentWidget);
-    
+
     auto* contentLayout = new QVBoxLayout(m_contentWidget);
-    contentLayout->setContentsMargins(24, 20, 24, 24);
+    contentLayout->setContentsMargins(16, 12, 16, 16);
     contentLayout->setSpacing(0);
-    
-    // === Header Section ===
-    auto* headerWidget = new QWidget(m_contentWidget);
-    auto* headerLayout = new QVBoxLayout(headerWidget);
-    headerLayout->setContentsMargins(0, 0, 0, 16);
-    headerLayout->setSpacing(12);
-    
-    // Title row with state badge
-    auto* topRow = new QHBoxLayout();
-    topRow->setSpacing(12);
-    
-    m_titleLabel = new QLabel(headerWidget);
-    QFont titleFont = m_titleLabel->font();
-    titleFont.setPointSize(18);
-    titleFont.setWeight(QFont::DemiBold);
-    m_titleLabel->setFont(titleFont);
-    m_titleLabel->setWordWrap(true);
-    
-    // State badge with pill styling
-    m_stateLabel = new QLabel(headerWidget);
-    m_stateLabel->setFixedHeight(24);
-    
-    topRow->addWidget(m_titleLabel, 1);
-    topRow->addWidget(m_stateLabel);
-    topRow->setAlignment(m_stateLabel, Qt::AlignTop);
-    
-    // Prompt text
-    m_promptLabel = new QLabel(headerWidget);
-    m_promptLabel->setWordWrap(true);
-    QFont promptFont = m_promptLabel->font();
-    promptFont.setPointSize(14);
-    m_promptLabel->setFont(promptFont);
-    
-    // Metadata row (repo, branch)
-    auto* metaRow = new QHBoxLayout();
-    metaRow->setSpacing(16);
-    
-    m_repoLabel = new QLabel(headerWidget);
-    QFont metaFont = m_repoLabel->font();
-    metaFont.setPointSize(12);
-    m_repoLabel->setFont(metaFont);
-    
-    m_branchLabel = new QLabel(headerWidget);
-    m_branchLabel->setFont(metaFont);
-    
-    m_gitStatsLabel = new QLabel(headerWidget);
-    m_gitStatsLabel->setFont(metaFont);
-    
-    metaRow->addWidget(m_repoLabel);
-    metaRow->addWidget(m_branchLabel);
-    metaRow->addWidget(m_gitStatsLabel);
-    metaRow->addStretch();
-    
-    headerLayout->addLayout(topRow);
-    headerLayout->addWidget(m_promptLabel);
-    headerLayout->addLayout(metaRow);
-    
-    // === Activity Section ===
-    auto* activityHeader = new QLabel("Activity", m_contentWidget);
-    QFont activityFont = activityHeader->font();
-    activityFont.setPointSize(14);
-    activityFont.setWeight(QFont::DemiBold);
-    activityHeader->setFont(activityFont);
-    
-    // Activity list with message bubble styling
-    m_activityList = new QListWidget(m_contentWidget);
-    m_activityList->setFrameShape(QFrame::NoFrame);
-    m_activityList->setSpacing(8);
-    m_activityList->setSelectionMode(QAbstractItemView::NoSelection);
-    m_activityList->setWordWrap(true);
-    m_activityList->setStyleSheet(R"(
-        QListWidget {
-            background-color: transparent;
-            border: none;
-        }
-        QListWidget::item {
-            background-color: transparent;
-            border: none;
-            padding: 0px;
-        }
-    )");
-    
+
+    // Activity container with VBoxLayout for automatic text reflow on resize
+    m_activityContainer = new QWidget(m_contentWidget);
+    m_activityLayout = new QVBoxLayout(m_activityContainer);
+    m_activityLayout->setSpacing(12);
+    m_activityLayout->setContentsMargins(0, 0, 0, 0);
+
     // === Button Row ===
     auto* buttonRow = new QHBoxLayout();
     buttonRow->setSpacing(12);
-    
+
     m_openBrowserBtn = new QPushButton("Open in Browser", m_contentWidget);
     m_openBrowserBtn->setStyleSheet(R"(
         QPushButton {
@@ -171,9 +282,9 @@ void SessionDetailWidget::setupUi() {
             background-color: rgba(128, 128, 128, 0.2);
         }
     )");
-    connect(m_openBrowserBtn, &QPushButton::clicked, 
+    connect(m_openBrowserBtn, &QPushButton::clicked,
             this, &SessionDetailWidget::requestOpenInBrowser);
-    
+
     m_pullRequestBtn = new QPushButton("View Pull Request", m_contentWidget);
     m_pullRequestBtn->hide();
     connect(m_pullRequestBtn, &QPushButton::clicked, [this]() {
@@ -182,46 +293,160 @@ void SessionDetailWidget::setupUi() {
             emit openUrlRequested(prUrl);
         }
     });
-    
+
     buttonRow->addWidget(m_openBrowserBtn);
     buttonRow->addWidget(m_pullRequestBtn);
     buttonRow->addStretch();
-    
-    // Assemble content layout
-    contentLayout->addWidget(headerWidget);
-    contentLayout->addSpacing(16);
-    contentLayout->addWidget(activityHeader);
-    contentLayout->addSpacing(12);
-    contentLayout->addWidget(m_activityList, 1);
+
+    // Assemble content layout (activities + buttons)
+    contentLayout->addWidget(m_activityContainer, 1);
     contentLayout->addSpacing(16);
     contentLayout->addLayout(buttonRow);
-    
+
+    // Create diff panel
+    m_diffPanel = new DiffPanelWidget(this);
+    m_diffPanel->setMinimumWidth(300);
+
+    // Create horizontal splitter: activities on left, diffs on right
+    m_mainSplitter = new QSplitter(Qt::Horizontal, this);
+    m_mainSplitter->addWidget(scrollArea);
+    m_mainSplitter->addWidget(m_diffPanel);
+    m_mainSplitter->setStretchFactor(0, 2);  // Activities get 2/5 space
+    m_mainSplitter->setStretchFactor(1, 3);  // Diffs get 3/5 space
+    m_mainSplitter->setChildrenCollapsible(false);
+
+    // Assemble main layout:
+    //   headerBar (fixed) → actionBar → splitter (scrollable activities + diff)
     mainLayout->addWidget(m_emptyLabel);
-    mainLayout->addWidget(scrollArea, 1);
-    
-    scrollArea->hide();
+    mainLayout->addWidget(m_headerBar);
+    mainLayout->addWidget(m_actionBar);
+    mainLayout->addWidget(m_mainSplitter, 1);
+
+    m_headerBar->hide();
+    m_mainSplitter->hide();
 }
 
 void SessionDetailWidget::setSession(const Session& session) {
     m_session = session;
+    m_promptExpanded = false;  // Reset expansion state for new session
     updateDisplay();
     populateActivities();
-    
+
+    // Restart time-ago auto-refresh timer
+    if (m_timeAgoTimer) {
+        m_timeAgoTimer->start();
+    }
+
+    // Show/hide action bar based on session state
+    bool isDark = palette().window().color().lightness() < 128;
+    if (session.state == SessionState::AwaitingPlanApproval) {
+        m_actionBar->show();
+        m_approveButton->show();
+        m_feedbackButton->setText("Request Changes");
+        m_feedbackButton->show();
+        // Style approve button: accent bg, white text
+        QColor accentColor = AppColors::accent(isDark);
+        m_approveButton->setStyleSheet(QString(
+            "QPushButton { background-color: %1; color: white; padding: 8px 20px; "
+            "border-radius: 8px; font-size: 13px; font-weight: 500; border: none; }"
+            "QPushButton:hover { background-color: %2; }"
+            "QPushButton:pressed { background-color: %3; }")
+            .arg(accentColor.name())
+            .arg(accentColor.darker(110).name())
+            .arg(accentColor.darker(120).name()));
+        // Style feedback button: secondary bg, primary text
+        QColor secondaryBg = AppColors::backgroundSecondary(isDark);
+        QColor primaryText = AppColors::textPrimary(isDark);
+        m_feedbackButton->setStyleSheet(QString(
+            "QPushButton { background-color: %1; color: %2; padding: 8px 20px; "
+            "border-radius: 8px; font-size: 13px; font-weight: 500; border: none; }"
+            "QPushButton:hover { background-color: %3; }")
+            .arg(secondaryBg.name())
+            .arg(primaryText.name())
+            .arg(secondaryBg.darker(110).name()));
+    } else if (session.state == SessionState::AwaitingUserFeedback) {
+        m_actionBar->show();
+        m_approveButton->hide();
+        m_feedbackButton->setText("Provide Feedback");
+        m_feedbackButton->show();
+        QColor accentColor = AppColors::accent(isDark);
+        m_feedbackButton->setStyleSheet(QString(
+            "QPushButton { background-color: %1; color: white; padding: 8px 20px; "
+            "border-radius: 8px; font-size: 13px; font-weight: 500; border: none; }"
+            "QPushButton:hover { background-color: %2; }"
+            "QPushButton:pressed { background-color: %3; }")
+            .arg(accentColor.name())
+            .arg(accentColor.darker(110).name())
+            .arg(accentColor.darker(120).name()));
+    } else {
+        m_actionBar->hide();
+    }
+
+    // Update diff panel with cached diffs
+    qDebug() << "[SessionDetailWidget::setSession] Session:" << session.id.left(8)
+             << "hasDiffs:" << session.cachedLatestDiffs.has_value()
+             << "diffCount:" << (session.cachedLatestDiffs.has_value() ? session.cachedLatestDiffs->size() : 0);
+
+    if (m_diffPanel) {
+        bool hasDiffs = session.cachedLatestDiffs.has_value() && !session.cachedLatestDiffs->isEmpty();
+
+        // Show loading spinner for active sessions that don't have diffs yet
+        bool isActiveSession = session.state == SessionState::Queued ||
+                               session.state == SessionState::Planning ||
+                               session.state == SessionState::InProgress;
+
+        if (hasDiffs) {
+            qDebug() << "[SessionDetailWidget::setSession] Setting" << session.cachedLatestDiffs->size() << "diffs";
+            m_diffPanel->setLoading(false);
+            m_diffPanel->setDiffs(session.cachedLatestDiffs.value());
+        } else if (isActiveSession) {
+            qDebug() << "[SessionDetailWidget::setSession] Active session, showing loading spinner";
+            m_diffPanel->setLoading(true);
+        } else {
+            qDebug() << "[SessionDetailWidget::setSession] No diffs available (completed/idle session)";
+            m_diffPanel->setLoading(false);
+            m_diffPanel->setDiffs({});  // Clear any old diffs
+        }
+    }
+
     m_emptyLabel->hide();
-    // Find scroll area and show it
-    if (auto* scrollArea = findChild<QScrollArea*>()) {
-        scrollArea->show();
+    m_headerBar->show();
+    if (m_mainSplitter) {
+        m_mainSplitter->show();
     }
 }
 
 void SessionDetailWidget::clear() {
     m_session.reset();
-    m_activityList->clear();
-    
-    if (auto* scrollArea = findChild<QScrollArea*>()) {
-        scrollArea->hide();
+    clearActivities();
+
+    // Stop time-ago auto-refresh
+    if (m_timeAgoTimer) {
+        m_timeAgoTimer->stop();
+    }
+
+    if (m_diffPanel) {
+        m_diffPanel->setLoading(false);
+        m_diffPanel->setDiffs({});  // Clear diffs
+    }
+
+    m_headerBar->hide();
+    m_actionBar->hide();
+    if (m_mainSplitter) {
+        m_mainSplitter->hide();
     }
     m_emptyLabel->show();
+}
+
+void SessionDetailWidget::clearActivities() {
+    m_userBubbles.clear();
+    QLayoutItem* child;
+    while ((child = m_activityLayout->takeAt(0)) != nullptr) {
+        if (child->widget()) {
+            delete child->widget();
+        }
+        delete child;
+    }
 }
 
 bool SessionDetailWidget::isEmpty() const {
@@ -232,10 +457,10 @@ QString SessionDetailWidget::displayedText() const {
     if (!m_session.has_value()) {
         return QString();
     }
-    
-    QString text = m_titleLabel->text() + "\n" + m_promptLabel->text();
-    if (!m_repoLabel->text().isEmpty()) {
-        text += "\n" + m_repoLabel->text();
+
+    QString text = m_titleLabel->text() + "\n" + m_session->prompt;
+    if (m_subtitleLabel && !m_subtitleLabel->text().isEmpty()) {
+        text += "\n" + m_subtitleLabel->text();
     }
     return text;
 }
@@ -248,14 +473,23 @@ QString SessionDetailWidget::stateIndicatorText() const {
 }
 
 int SessionDetailWidget::activityCount() const {
-    return m_activityList->count();
+    // Count actual widgets, minus the trailing stretch
+    int count = m_activityLayout->count();
+    // The last item is a stretch spacer added in populateActivities
+    if (count > 0) {
+        QLayoutItem* last = m_activityLayout->itemAt(count - 1);
+        if (last && !last->widget()) {
+            count--;  // Subtract the stretch item
+        }
+    }
+    return count;
 }
 
 bool SessionDetailWidget::hasPullRequestLink() const {
     if (!m_session.has_value() || !m_session->outputs.has_value()) {
         return false;
     }
-    
+
     for (const auto& output : m_session->outputs.value()) {
         if (output.pullRequest.has_value()) {
             return true;
@@ -268,7 +502,7 @@ QString SessionDetailWidget::pullRequestUrl() const {
     if (!m_session.has_value() || !m_session->outputs.has_value()) {
         return QString();
     }
-    
+
     for (const auto& output : m_session->outputs.value()) {
         if (output.pullRequest.has_value()) {
             return output.pullRequest->url;
@@ -283,93 +517,117 @@ void SessionDetailWidget::requestOpenInBrowser() {
     }
 }
 
+QString SessionDetailWidget::formatTimeAgo(const QDateTime& created) {
+    if (!created.isValid()) {
+        return QString();
+    }
+
+    qint64 secs = created.secsTo(QDateTime::currentDateTimeUtc());
+    if (secs < 0) secs = 0;
+
+    if (secs < 60) {
+        return QStringLiteral("Just now");
+    } else if (secs < 3600) {
+        int mins = static_cast<int>(secs / 60);
+        return QString("%1 min ago").arg(mins);
+    } else if (secs < 86400) {
+        int hours = static_cast<int>(secs / 3600);
+        return QString("%1 hour%2 ago").arg(hours).arg(hours == 1 ? "" : "s");
+    } else if (secs < 172800) {
+        return QStringLiteral("Yesterday");
+    } else {
+        return created.toString("MMM d");
+    }
+}
+
+void SessionDetailWidget::updateTimeAgo() {
+    if (!m_session.has_value() || !m_session->createTime.has_value()) {
+        return;
+    }
+    QDateTime created = QDateTime::fromString(m_session->createTime.value(), Qt::ISODate);
+    if (!created.isValid()) {
+        created = QDateTime::fromString(m_session->createTime.value(), Qt::ISODateWithMs);
+    }
+    if (created.isValid()) {
+        m_timeAgoLabel->setText(formatTimeAgo(created));
+    }
+}
+
 void SessionDetailWidget::updateDisplay() {
     if (!m_session.has_value()) {
         return;
     }
-    
+
     bool isDark = palette().window().color().lightness() < 128;
     const Session& session = m_session.value();
-    
-    // Title
+
+    // Header bar background + bottom border
+    m_headerBar->setStyleSheet(QString(
+        "QWidget { background-color: %1; border-bottom: 1px solid %2; }")
+        .arg(AppColors::background(isDark).name())
+        .arg(AppColors::separator(isDark).name()));
+
+    // Title - 13pt Medium, single line, elided
     QString title = session.title.value_or(session.prompt.left(50));
-    if (title.length() > 60) {
-        title = title.left(57) + "...";
-    }
     m_titleLabel->setText(title);
-    m_titleLabel->setStyleSheet(QString("color: %1;").arg(AppColors::textPrimary(isDark).name()));
-    
-    // Prompt
-    m_promptLabel->setText(session.prompt);
-    m_promptLabel->setStyleSheet(QString("color: %1;").arg(AppColors::textPrimary(isDark).name()));
-    
-    // State badge with proper colors
-    QString stateText = stateToDisplayText(session.state);
-    m_stateLabel->setText(stateText);
-    
-    QColor stateColor = stateToColor(session.state);
-    QColor textColor = isDark ? QColor(0, 0, 0) : QColor(255, 255, 255);
-    
-    // Adjust text color for better contrast on certain backgrounds
-    if (session.state == SessionState::Completed || 
-        session.state == SessionState::CompletedUnknown ||
-        session.state == SessionState::Queued ||
-        session.state == SessionState::Unspecified) {
-        textColor = QColor(255, 255, 255);
-    }
-    
-    m_stateLabel->setStyleSheet(QString(
-        "background-color: %1; color: %2; "
-        "padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500;")
-        .arg(stateColor.name())
-        .arg(textColor.name()));
-    
-    // Metadata
-    QColor secondaryColor = AppColors::textSecondary(isDark);
-    QString metaStyle = QString("color: %1;").arg(secondaryColor.name());
-    
+    m_titleLabel->setTextFormat(Qt::PlainText);
+    QFontMetrics fm(m_titleLabel->font());
+    m_titleLabel->setStyleSheet(QString("color: %1; border: none;").arg(AppColors::textPrimary(isDark).name()));
+
+    // Subtitle: repo · branch · git stats
+    QStringList subtitleParts;
     if (session.sourceContext.has_value()) {
         QString source = session.sourceContext->source;
         source = source.replace("sources/github/", "");
-        m_repoLabel->setText(QString("📁 %1").arg(source));
-        m_repoLabel->setStyleSheet(metaStyle);
-        
+        subtitleParts.append(source);
+
         if (session.sourceContext->githubRepoContext.has_value() &&
             session.sourceContext->githubRepoContext->startingBranch.has_value()) {
-            m_branchLabel->setText(QString("🌿 %1")
-                .arg(session.sourceContext->githubRepoContext->startingBranch.value()));
-            m_branchLabel->setStyleSheet(metaStyle);
-        } else {
-            m_branchLabel->clear();
+            subtitleParts.append(session.sourceContext->githubRepoContext->startingBranch.value());
         }
-    } else {
-        m_repoLabel->clear();
-        m_branchLabel->clear();
     }
-    
-    // Git stats badge (e.g., "+50 -30")
+
     QString gitStats = session.gitStatsSummary();
     if (!gitStats.isEmpty()) {
-        // Parse and colorize the stats
-        QStringList parts = gitStats.split(' ');
-        QString addedPart = parts.size() > 0 ? parts[0] : "";
-        QString removedPart = parts.size() > 1 ? parts[1] : "";
-        
-        QColor addedColor = QColor(34, 197, 94);   // Green
-        QColor removedColor = QColor(239, 68, 68); // Red
-        
-        m_gitStatsLabel->setText(QString("<span style='color:%1'>%2</span> <span style='color:%3'>%4</span>")
-            .arg(addedColor.name())
-            .arg(addedPart)
-            .arg(removedColor.name())
-            .arg(removedPart));
-        m_gitStatsLabel->setTextFormat(Qt::RichText);
-        m_gitStatsLabel->show();
-    } else {
-        m_gitStatsLabel->clear();
-        m_gitStatsLabel->hide();
+        subtitleParts.append(gitStats);
     }
-    
+
+    QColor secondaryColor = AppColors::textSecondary(isDark);
+    if (!subtitleParts.isEmpty()) {
+        m_subtitleLabel->setText(subtitleParts.join(" · "));
+        m_subtitleLabel->setStyleSheet(QString("color: %1; border: none;").arg(secondaryColor.name()));
+        m_subtitleLabel->show();
+    } else {
+        m_subtitleLabel->clear();
+        m_subtitleLabel->hide();
+    }
+
+    // State badge with proper colors
+    QString stateText = stateToDisplayText(session.state);
+    m_stateLabel->setText(stateText);
+
+    QColor stateColor = stateToColor(session.state);
+    m_stateLabel->setStyleSheet(QString(
+        "background-color: %1; color: white; "
+        "padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 500; border: none;")
+        .arg(stateColor.name()));
+
+    // Time-ago label
+    if (session.createTime.has_value() && !session.createTime->isEmpty()) {
+        QDateTime created = QDateTime::fromString(session.createTime.value(), Qt::ISODate);
+        if (!created.isValid()) {
+            // Try alternative format (Google API format with Z suffix)
+            created = QDateTime::fromString(session.createTime.value(), Qt::ISODateWithMs);
+        }
+        QString timeAgo = formatTimeAgo(created);
+        m_timeAgoLabel->setText(timeAgo);
+        m_timeAgoLabel->setStyleSheet(QString("color: %1; border: none;").arg(secondaryColor.name()));
+        m_timeAgoLabel->show();
+    } else {
+        m_timeAgoLabel->clear();
+        m_timeAgoLabel->hide();
+    }
+
     // PR button styling
     bool hasPR = hasPullRequestLink();
     m_pullRequestBtn->setVisible(hasPR);
@@ -389,74 +647,253 @@ void SessionDetailWidget::updateDisplay() {
 }
 
 void SessionDetailWidget::populateActivities() {
-    m_activityList->clear();
-    
-    if (!m_session.has_value() || !m_session->activities.has_value()) {
+    clearActivities();
+
+    if (!m_session.has_value()) {
+        m_activityLayout->addStretch();
         return;
     }
-    
+
     bool isDark = palette().window().color().lightness() < 128;
-    
+
+    // === Prepend prompt as first bubble (user message style) ===
+    if (!m_session->prompt.isEmpty()) {
+        auto* itemWidget = new QWidget();
+        auto* itemLayout = new QHBoxLayout(itemWidget);
+        itemLayout->setContentsMargins(0, 6, 0, 6);
+
+        auto* bubbleContainer = new QWidget();
+        auto* bubbleVLayout = new QVBoxLayout(bubbleContainer);
+        bubbleVLayout->setContentsMargins(0, 0, 0, 0);
+        bubbleVLayout->setSpacing(4);
+        bubbleContainer->setMaximumWidth(static_cast<int>(width() * 0.8));
+        m_userBubbles.append(bubbleContainer);
+
+        auto* bubble = new QLabel();
+        bubble->setTextFormat(Qt::RichText);
+        bubble->setWordWrap(true);
+        bubble->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::LinksAccessibleByMouse);
+        bubble->setOpenExternalLinks(true);
+
+        // Check if truncation is needed
+        QString promptText = m_session->prompt;
+        bool needsTruncation = isTruncatable(promptText) && !m_promptExpanded;
+        QString displayText = needsTruncation ? truncateText(promptText) : promptText;
+        bubble->setText(markdownToHtml(displayText, isDark));
+
+        QColor bubbleBg = AppColors::accent(isDark);
+        bubble->setStyleSheet(QString(
+            "background-color: %1; color: white; "
+            "padding: 12px 16px; border-radius: 18px; font-size: 13px; "
+            "border: none;")
+            .arg(bubbleBg.name()));
+
+        bubbleVLayout->addWidget(bubble);
+
+        // Add Read More button if truncated
+        if (needsTruncation) {
+            auto* readMoreBtn = new QPushButton("Read More");
+            readMoreBtn->setFlat(true);
+            readMoreBtn->setCursor(Qt::PointingHandCursor);
+            readMoreBtn->setStyleSheet(QString(
+                "QPushButton { color: %1; font-size: 11px; font-weight: 500; padding: 2px 0px; border: none; background: transparent; text-align: right; }"
+                "QPushButton:hover { text-decoration: underline; }")
+                .arg(QColor(255, 255, 255).name()));
+
+            QString fullHtml = markdownToHtml(promptText, isDark);
+            connect(readMoreBtn, &QPushButton::clicked, [bubble, readMoreBtn, fullHtml]() {
+                bubble->setText(fullHtml);
+                readMoreBtn->hide();
+            });
+
+            bubbleVLayout->addWidget(readMoreBtn);
+        }
+
+        // Right-aligned (user bubble)
+        itemLayout->addStretch();
+        itemLayout->addWidget(bubbleContainer);
+
+        m_activityLayout->addWidget(itemWidget);
+    }
+
+    // === Activities ===
+    if (!m_session->activities.has_value()) {
+        m_activityLayout->addStretch();
+        return;
+    }
+
     for (const auto& activity : m_session->activities.value()) {
+        // Special handling for plan generated activities
+        if (activity.planGenerated.has_value()) {
+            // Create plan widget container - full width, left-aligned
+            auto* planContainer = new QWidget();
+            auto* planOuterLayout = new QHBoxLayout(planContainer);
+            planOuterLayout->setContentsMargins(0, 6, 0, 6);
+
+            auto* planWidget = new QWidget();
+            auto* planLayout = new QVBoxLayout(planWidget);
+            planLayout->setContentsMargins(0, 0, 0, 0);
+            planLayout->setSpacing(8);
+
+            // "Created Plan" header (bold)
+            auto* headerLabel = new QLabel("Created Plan", planWidget);
+            QFont headerFont = headerLabel->font();
+            headerFont.setPointSize(13);
+            headerFont.setWeight(QFont::DemiBold);
+            headerLabel->setFont(headerFont);
+            headerLabel->setStyleSheet(QString("color: %1;").arg(AppColors::textPrimary(isDark).name()));
+            planLayout->addWidget(headerLabel);
+
+            // Steps container with border
+            auto* stepsContainer = new QWidget(planWidget);
+            auto* stepsLayout = new QVBoxLayout(stepsContainer);
+            stepsLayout->setContentsMargins(12, 12, 12, 12);
+            stepsLayout->setSpacing(4);
+
+            // Add each plan step
+            const auto& steps = activity.planGenerated->plan.steps;
+            for (const auto& step : steps) {
+                auto* stepWidget = new PlanStepWidget(step, isDark, stepsContainer);
+                stepsLayout->addWidget(stepWidget);
+            }
+
+            // Border styling for steps container
+            QColor borderColor = AppColors::backgroundSecondary(isDark);
+            stepsContainer->setStyleSheet(QString(
+                "QWidget { background: transparent; border: 1px solid %1; border-radius: 12px; }")
+                .arg(borderColor.name()));
+
+            planLayout->addWidget(stepsContainer);
+
+            // Left-aligned, full width (no max width)
+            planOuterLayout->addWidget(planWidget, 1);
+
+            m_activityLayout->addWidget(planContainer);
+            continue;
+        }
+
         QString text = formatActivityText(activity);
         if (!text.isEmpty()) {
-            auto* item = new QListWidgetItem(m_activityList);
-            item->setData(Qt::UserRole, activity.id);
-            
             // Create a custom widget for the activity item (message bubble style)
             auto* itemWidget = new QWidget();
             auto* itemLayout = new QHBoxLayout(itemWidget);
-            itemLayout->setContentsMargins(0, 10, 0, 10);  // Match macOS ~20pt spacing
-            
+            itemLayout->setContentsMargins(0, 6, 0, 6);
+
             bool isUser = (activity.originator == "USER");
-            
+
+            // Container for bubble + optional Read More button
+            auto* bubbleContainer = new QWidget();
+            auto* bubbleVLayout = new QVBoxLayout(bubbleContainer);
+            bubbleVLayout->setContentsMargins(0, 0, 0, 0);
+            bubbleVLayout->setSpacing(4);
+
             auto* bubble = new QLabel();
             bubble->setTextFormat(Qt::RichText);
-            bubble->setText(markdownToHtml(text));
             bubble->setWordWrap(true);
             bubble->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::LinksAccessibleByMouse);
             bubble->setOpenExternalLinks(true);
-            bubble->setMaximumWidth(450);  // Limit bubble width like macOS (minLength: 50 spacer)
-            
+
+            if (isUser) {
+                // User messages: 80% max width, track for resize updates
+                bubbleContainer->setMaximumWidth(static_cast<int>(width() * 0.8));
+                m_userBubbles.append(bubbleContainer);
+            }
+            // Agent messages: no max width, full available width
+
+            // Check if truncation is needed
+            bool needsTruncation = isTruncatable(text);
+            QString displayText = needsTruncation ? truncateText(text) : text;
+            bubble->setText(markdownToHtml(displayText, isDark));
+
             // User messages: accent background, white text
             // Agent messages: secondary background, primary text
-            QColor bubbleBg = isUser 
+            QColor bubbleBg = isUser
                 ? AppColors::accent(isDark)
                 : AppColors::backgroundSecondary(isDark);
-            QColor bubbleText = isUser 
+            QColor bubbleText = isUser
                 ? QColor(255, 255, 255)  // White for user bubbles
                 : AppColors::textPrimary(isDark);
-            
+
+            int borderRadius = isUser ? 18 : 16;
+            int paddingV = isUser ? 12 : 14;
+            int paddingH = isUser ? 16 : 18;
+
+            // Subtle 1px border on agent bubbles for definition
+            QColor borderColor = AppColors::separator(isDark);
+            borderColor.setAlphaF(isUser ? 0.0 : 0.5);
+
             bubble->setStyleSheet(QString(
                 "background-color: %1; color: %2; "
-                "padding: 12px 16px; border-radius: 18px; font-size: 13px;")
+                "padding: %3px %4px; border-radius: %5px; font-size: 13px; "
+                "border: 1px solid %6;")
                 .arg(bubbleBg.name())
-                .arg(bubbleText.name()));
-            
-            if (isUser) {
-                itemLayout->addSpacing(50);  // Match macOS minLength: 50
-                itemLayout->addStretch();
-                itemLayout->addWidget(bubble);
-            } else {
-                itemLayout->addWidget(bubble);
-                itemLayout->addStretch();
-                itemLayout->addSpacing(50);  // Match macOS minLength: 50
+                .arg(bubbleText.name())
+                .arg(paddingV)
+                .arg(paddingH)
+                .arg(borderRadius)
+                .arg(borderColor.name(QColor::HexArgb)));
+
+            bubbleVLayout->addWidget(bubble);
+
+            // Add Read More button if truncated
+            if (needsTruncation) {
+                auto* readMoreBtn = new QPushButton("Read More");
+                readMoreBtn->setFlat(true);
+                readMoreBtn->setCursor(Qt::PointingHandCursor);
+                QColor accentColor = AppColors::accent(isDark);
+                readMoreBtn->setStyleSheet(QString(
+                    "QPushButton { color: %1; font-size: 11px; font-weight: 500; padding: 2px 0px; border: none; background: transparent; text-align: %2; }"
+                    "QPushButton:hover { text-decoration: underline; }")
+                    .arg(accentColor.name())
+                    .arg(isUser ? "right" : "left"));
+
+                // Store full text for expansion
+                QString fullHtml = markdownToHtml(text, isDark);
+                connect(readMoreBtn, &QPushButton::clicked, [bubble, readMoreBtn, fullHtml]() {
+                    bubble->setText(fullHtml);
+                    readMoreBtn->hide();
+                });
+
+                bubbleVLayout->addWidget(readMoreBtn);
             }
-            
-            item->setSizeHint(itemWidget->sizeHint());
-            m_activityList->setItemWidget(item, itemWidget);
+
+            if (isUser) {
+                // Right-aligned user bubble
+                itemLayout->addStretch();
+                itemLayout->addWidget(bubbleContainer);
+            } else {
+                // Full-width agent bubble
+                itemLayout->addWidget(bubbleContainer, 1);
+            }
+
+            m_activityLayout->addWidget(itemWidget);
         }
     }
-    
-    // Scroll to bottom to show latest activity
-    if (m_activityList->count() > 0) {
-        m_activityList->scrollToBottom();
-    }
+
+    // Keep items top-aligned
+    m_activityLayout->addStretch();
+
+    // Smooth animated scroll to bottom (defer to let layout calculate)
+    QTimer::singleShot(0, this, [this]() {
+        if (m_scrollArea && isVisible()) {
+            auto* bar = m_scrollArea->verticalScrollBar();
+            int startVal = bar->value();
+            int endVal = bar->maximum();
+            if (startVal < endVal) {
+                auto* anim = new QPropertyAnimation(bar, "value", this);
+                anim->setDuration(300);
+                anim->setStartValue(startVal);
+                anim->setEndValue(endVal);
+                anim->setEasingCurve(QEasingCurve::OutCubic);
+                anim->start(QAbstractAnimation::DeleteWhenStopped);
+            }
+        }
+    });
 }
 
 QString SessionDetailWidget::formatActivityText(const Activity& activity) const {
     QString text;
-    
+
     if (activity.userMessaged.has_value()) {
         text = activity.userMessaged->userMessage;
     } else if (activity.agentMessaged.has_value()) {
@@ -479,7 +916,7 @@ QString SessionDetailWidget::formatActivityText(const Activity& activity) const 
         QString reason = activity.sessionFailed->reason.value_or("Unknown error");
         text = QString("❌ Session failed: %1").arg(reason);
     }
-    
+
     return text;
 }
 
@@ -497,33 +934,176 @@ QColor SessionDetailWidget::stateToColor(SessionState state) const {
     return AppColors::stateColor(static_cast<int>(state), isDark);
 }
 
-QString SessionDetailWidget::markdownToHtml(const QString& markdown) const {
-    QString html = markdown.toHtmlEscaped();
-    
-    // Code blocks (triple backticks)
-    QRegularExpression codeBlockRe(R"(```(\w*)\n([\s\S]*?)```)");
-    html.replace(codeBlockRe, "<pre style='background-color: rgba(0,0,0,0.1); padding: 8px; border-radius: 4px; font-family: monospace;'>\\2</pre>");
-    
-    // Inline code (single backticks)
-    QRegularExpression inlineCodeRe(R"(`([^`]+)`)");
-    html.replace(inlineCodeRe, "<code style='background-color: rgba(0,0,0,0.1); padding: 2px 4px; border-radius: 2px; font-family: monospace;'>\\1</code>");
-    
-    // Bold (**text** or __text__)
-    QRegularExpression boldRe(R"(\*\*([^\*]+)\*\*)");
-    html.replace(boldRe, "<b>\\1</b>");
-    QRegularExpression boldRe2(R"(__([^_]+)__)");
-    html.replace(boldRe2, "<b>\\1</b>");
-    
-    // Italic (*text* or _text_)
-    QRegularExpression italicRe(R"(\*([^\*]+)\*)");
-    html.replace(italicRe, "<i>\\1</i>");
-    QRegularExpression italicRe2(R"(_([^_]+)_)");
-    html.replace(italicRe2, "<i>\\1</i>");
-    
-    // Line breaks
-    html.replace("\n", "<br>");
-    
-    return html;
+QString SessionDetailWidget::markdownToHtml(const QString& markdown, bool isDark) const {
+    QString codeBg = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+    QString textColor = AppColors::textPrimary(isDark).name();
+    QString secondaryColor = AppColors::textSecondary(isDark).name();
+    QString accentColor = AppColors::accent(isDark).name();
+    QString quoteBorder = isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)";
+
+    // Split into lines, process code blocks separately
+    QStringList lines = markdown.split('\n');
+    QStringList resultLines;
+    bool inCodeBlock = false;
+    QStringList codeBlockLines;
+
+    for (const QString& rawLine : lines) {
+        // Check for code block fence
+        if (rawLine.trimmed().startsWith("```")) {
+            if (!inCodeBlock) {
+                inCodeBlock = true;
+                codeBlockLines.clear();
+                continue;
+            } else {
+                // End of code block - emit as <pre>
+                QString codeContent = codeBlockLines.join('\n').toHtmlEscaped();
+                resultLines.append(QString("<pre style='background-color: %1; padding: 8px; border-radius: 4px; font-family: monospace;'>%2</pre>")
+                    .arg(codeBg, codeContent));
+                inCodeBlock = false;
+                continue;
+            }
+        }
+
+        if (inCodeBlock) {
+            codeBlockLines.append(rawLine);
+            continue;
+        }
+
+        // Process non-code-block lines
+        QString line = rawLine.toHtmlEscaped();
+
+        // Horizontal rules (--- or ***)
+        static QRegularExpression hrRe(R"(^(\-\-\-|\*\*\*)$)");
+        if (hrRe.match(line).hasMatch()) {
+            resultLines.append(QString("<hr style='border: none; border-top: 1px solid %1; margin: 8px 0;'>").arg(quoteBorder));
+            continue;
+        }
+
+        // Headers (### before ## before #)
+        static QRegularExpression h3Re(R"(^### (.+)$)");
+        static QRegularExpression h2Re(R"(^## (.+)$)");
+        static QRegularExpression h1Re(R"(^# (.+)$)");
+        auto h3Match = h3Re.match(line);
+        if (h3Match.hasMatch()) {
+            resultLines.append(QString("<h3 style='color: %1; margin: 12px 0 6px;'>%2</h3>").arg(textColor, h3Match.captured(1)));
+            continue;
+        }
+        auto h2Match = h2Re.match(line);
+        if (h2Match.hasMatch()) {
+            resultLines.append(QString("<h2 style='color: %1; margin: 14px 0 8px;'>%2</h2>").arg(textColor, h2Match.captured(1)));
+            continue;
+        }
+        auto h1Match = h1Re.match(line);
+        if (h1Match.hasMatch()) {
+            resultLines.append(QString("<h1 style='color: %1; margin: 16px 0 10px;'>%2</h1>").arg(textColor, h1Match.captured(1)));
+            continue;
+        }
+
+        // Blockquotes (> text)
+        static QRegularExpression bqRe(R"(^&gt; (.+)$)");
+        auto bqMatch = bqRe.match(line);
+        if (bqMatch.hasMatch()) {
+            resultLines.append(QString("<blockquote style='border-left: 3px solid %1; padding-left: 12px; margin: 4px 0; color: %2;'>%3</blockquote>")
+                .arg(quoteBorder, secondaryColor, bqMatch.captured(1)));
+            continue;
+        }
+
+        // Bullet lists (- item or * item)
+        bool lineHandled = false;
+        static QRegularExpression ulRe(R"(^[\-\*] (.+)$)");
+        auto ulMatch = ulRe.match(line);
+        if (ulMatch.hasMatch()) {
+            resultLines.append(QString("<li style='margin-left: 16px;'>%1</li>").arg(ulMatch.captured(1)));
+            lineHandled = true;
+        }
+
+        // Numbered lists (1. item)
+        if (!lineHandled) {
+            static QRegularExpression olRe(R"(^\d+\. (.+)$)");
+            auto olMatch = olRe.match(line);
+            if (olMatch.hasMatch()) {
+                resultLines.append(QString("<li style='margin-left: 16px;'>%1</li>").arg(olMatch.captured(1)));
+                lineHandled = true;
+            }
+        }
+
+        // Plain text line - add as-is
+        if (!lineHandled) {
+            resultLines.append(line);
+        }
+
+        // Apply inline formatting to the last line
+        QString& lastLine = resultLines.last();
+
+        // Inline code
+        static QRegularExpression inlineCodeRe(R"(`([^`]+)`)");
+        lastLine.replace(inlineCodeRe, QString("<code style='background-color: %1; padding: 2px 4px; border-radius: 2px; font-family: monospace;'>\\1</code>").arg(codeBg));
+
+        // Links [text](url)
+        static QRegularExpression linkRe(R"(\[([^\]]+)\]\(([^\)]+)\))");
+        lastLine.replace(linkRe, QString("<a href='\\2' style='color: %1;'>\\1</a>").arg(accentColor));
+
+        // Bold (**text** or __text__)
+        static QRegularExpression boldRe(R"(\*\*([^\*]+)\*\*)");
+        lastLine.replace(boldRe, "<b>\\1</b>");
+        static QRegularExpression boldRe2(R"(__([^_]+)__)");
+        lastLine.replace(boldRe2, "<b>\\1</b>");
+
+        // Italic (*text* or _text_)
+        static QRegularExpression italicRe(R"(\*([^\*]+)\*)");
+        lastLine.replace(italicRe, "<i>\\1</i>");
+        static QRegularExpression italicRe2(R"(_([^_]+)_)");
+        lastLine.replace(italicRe2, "<i>\\1</i>");
+    }
+
+    // Handle unclosed code block
+    if (inCodeBlock && !codeBlockLines.isEmpty()) {
+        QString codeContent = codeBlockLines.join('\n').toHtmlEscaped();
+        resultLines.append(QString("<pre style='background-color: %1; padding: 8px; border-radius: 4px; font-family: monospace;'>%2</pre>")
+            .arg(codeBg, codeContent));
+    }
+
+    return resultLines.join("<br>");
+}
+
+bool SessionDetailWidget::isTruncatable(const QString& text) const {
+    // Truncate if text is longer than 225 chars OR has 5+ newlines
+    return text.length() > 225 || text.count('\n') >= 5;
+}
+
+QString SessionDetailWidget::truncateText(const QString& text, int maxLines) const {
+    QStringList lines = text.split('\n');
+    if (lines.size() <= maxLines) {
+        // Check character limit
+        if (text.length() <= 225) {
+            return text;
+        }
+        return text.left(222) + "...";
+    }
+
+    // Take first maxLines and add ellipsis
+    QStringList truncated = lines.mid(0, maxLines);
+    return truncated.join('\n') + "...";
+}
+
+void SessionDetailWidget::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange && m_session.has_value()) {
+        updateDisplay();
+        populateActivities();
+    }
+}
+
+void SessionDetailWidget::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+
+    // Update user bubble max widths to 80% of new panel width
+    int maxWidth = static_cast<int>(event->size().width() * 0.8);
+    for (auto* bubble : m_userBubbles) {
+        if (bubble) {
+            bubble->setMaximumWidth(maxWidth);
+        }
+    }
 }
 
 }

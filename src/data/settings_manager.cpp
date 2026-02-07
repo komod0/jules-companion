@@ -1,6 +1,11 @@
 #include "data/settings_manager.h"
 #include <QSysInfo>
 #include <QByteArray>
+#include <QStandardPaths>
+#include <QDir>
+#include <QFile>
+#include <QTextStream>
+#include <QCoreApplication>
 #include <algorithm>
 
 namespace {
@@ -8,7 +13,7 @@ namespace {
 const int MIN_FONT_SIZE = 9;
 const int MAX_FONT_SIZE = 24;
 const int DEFAULT_ACTIVITY_FONT_SIZE = 12;
-const int DEFAULT_DIFF_FONT_SIZE = 11;
+const int DEFAULT_DIFF_FONT_SIZE = 13;
 
 QString machineId() {
     // Use Qt's machine unique ID
@@ -59,6 +64,10 @@ SettingsManager::SettingsManager(QObject* parent)
 }
 
 QString SettingsManager::apiKey() const {
+    // Environment variable takes precedence (convenient for dev/rebuild cycles)
+    QString envKey = qEnvironmentVariable("JULES_API_KEY");
+    if (!envKey.isEmpty()) return envKey;
+
     QString encoded = m_settings.value("api/keyEncoded").toString();
     if (encoded.isEmpty()) return {};
     return deobfuscate(encoded, machineId());
@@ -125,6 +134,98 @@ void SettingsManager::setDiffFontSize(int size) {
 
 int SettingsManager::clampFontSize(int size) const {
     return std::clamp(size, MIN_FONT_SIZE, MAX_FONT_SIZE);
+}
+
+bool SettingsManager::launchAtLoginEnabled() const {
+    return m_settings.value("general/launchAtLogin", false).toBool();
+}
+
+void SettingsManager::setLaunchAtLoginEnabled(bool enabled) {
+    if (launchAtLoginEnabled() == enabled) return;
+    
+    m_settings.setValue("general/launchAtLogin", enabled);
+    
+    // Handle XDG autostart desktop file
+    QString autostartDir = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) + "/autostart";
+    QString desktopFile = autostartDir + "/jules.desktop";
+    
+    if (enabled) {
+        // Create autostart directory if needed
+        QDir().mkpath(autostartDir);
+        
+        // Create .desktop file
+        QFile file(desktopFile);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream out(&file);
+            out << "[Desktop Entry]\n";
+            out << "Type=Application\n";
+            out << "Name=Jules\n";
+            out << "Comment=Jules AI Coding Assistant\n";
+            out << "Exec=" << QCoreApplication::applicationFilePath() << "\n";
+            out << "Icon=jules\n";
+            out << "Hidden=false\n";
+            out << "X-GNOME-Autostart-enabled=true\n";
+            out << "StartupNotify=false\n";
+            file.close();
+        }
+    } else {
+        // Remove .desktop file
+        QFile::remove(desktopFile);
+    }
+    
+    emit launchAtLoginChanged(enabled);
+}
+
+bool SettingsManager::aiSummariesEnabled() const {
+    return m_settings.value("ai/summariesEnabled", false).toBool();
+}
+
+void SettingsManager::setAiSummariesEnabled(bool enabled) {
+    if (aiSummariesEnabled() == enabled) return;
+
+    m_settings.setValue("ai/summariesEnabled", enabled);
+    emit aiSummariesEnabledChanged(enabled);
+}
+
+QString SettingsManager::geminiApiKey() const {
+    QString encoded = m_settings.value("ai/geminiKeyEncoded").toString();
+    if (encoded.isEmpty()) return {};
+    return deobfuscate(encoded, machineId());
+}
+
+void SettingsManager::setGeminiApiKey(const QString& key) {
+    if (key.isEmpty()) {
+        m_settings.remove("ai/geminiKeyEncoded");
+    } else {
+        QString encoded = obfuscate(key, machineId());
+        m_settings.setValue("ai/geminiKeyEncoded", encoded);
+    }
+}
+
+QStringList SettingsManager::repositoryFolders() const {
+    return m_settings.value("repositories/folders").toStringList();
+}
+
+void SettingsManager::setRepositoryFolders(const QStringList& folders) {
+    if (repositoryFolders() == folders) return;
+    
+    m_settings.setValue("repositories/folders", folders);
+    emit repositoryFoldersChanged();
+}
+
+void SettingsManager::addRepositoryFolder(const QString& folder) {
+    QStringList folders = repositoryFolders();
+    if (!folders.contains(folder)) {
+        folders.append(folder);
+        setRepositoryFolders(folders);
+    }
+}
+
+void SettingsManager::removeRepositoryFolder(const QString& folder) {
+    QStringList folders = repositoryFolders();
+    if (folders.removeAll(folder) > 0) {
+        setRepositoryFolders(folders);
+    }
 }
 
 void SettingsManager::sync() {

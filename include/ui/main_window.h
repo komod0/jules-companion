@@ -9,7 +9,10 @@
 #include <QMenu>
 #include <QAction>
 #include <QVBoxLayout>
+#include <QLabel>
 #include "data/settings_manager.h"
+
+class QCloseEvent;
 
 namespace jules {
 
@@ -42,13 +45,17 @@ public:
 
     void setSidebarVisible(bool visible);
     void setStatusBarVisible(bool visible);
-    
+    void setNetworkOnline(bool online);
+
     void showFlashMessage(const QString& message, FlashMessageType type, int durationMs = 3000);
 
 signals:
     void themeChanged(Theme theme);
     void settingsRequested();
     void quitRequested();
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
 
 private:
     void setupUi();
@@ -68,6 +75,7 @@ private:
     QToolBar* m_toolbar;
     QMenuBar* m_menuBar;
     FlashMessageWidget* m_flashMessage = nullptr;
+    QLabel* m_networkIndicator = nullptr;
     Theme m_theme = Theme::System;
     Theme m_effectiveTheme = Theme::Light;
     
