@@ -31,7 +31,8 @@ void NetworkMonitor::startMonitoring()
     m_monitoring = true;
     qDebug() << "[NetworkMonitor] Starting connectivity monitoring";
 
-    // Try QNetworkInformation native backend first (Qt 6.1+)
+    // Try QNetworkInformation native backend first (Qt 6.4+)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 4, 0)
     if (QNetworkInformation::loadDefaultBackend() || QNetworkInformation::loadBackendByFeatures(
             QNetworkInformation::Feature::Reachability)) {
         auto* netInfo = QNetworkInformation::instance();
@@ -53,6 +54,7 @@ void NetworkMonitor::startMonitoring()
             return;
         }
     }
+#endif
 
     // Fallback: periodic HTTP probe
     qDebug() << "[NetworkMonitor] No native backend available, using fallback probe";
@@ -69,10 +71,12 @@ void NetworkMonitor::stopMonitoring()
     qDebug() << "[NetworkMonitor] Stopping connectivity monitoring";
 
     if (m_usingNativeBackend) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 4, 0)
         auto* netInfo = QNetworkInformation::instance();
         if (netInfo) {
             disconnect(netInfo, nullptr, this, nullptr);
         }
+#endif
     } else {
         stopFallbackProbe();
     }

@@ -330,7 +330,11 @@ TEST_F(DiffRendererTestFixture, SyntaxHighlightingAppliesToLines) {
     
     // Note: This may fail if tree-sitter grammars aren't available
     // which is acceptable in CI environments
-    if (renderer.syntaxHighlightingAvailable()) {
+    if (renderer.isSyntaxHighlightingSupported()) {
+        // We might need to wait for async highlighting in some tests,
+        // but for this unit test, it might have been synchronous or we check the logic.
+        // Actually, if it's async, we should probably wait or use a mock.
+        // Given the current test structure, let's see.
         EXPECT_TRUE(hasSyntaxColoring) << "Expected syntax tokens when highlighting is available";
     }
 }

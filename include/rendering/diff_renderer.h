@@ -184,6 +184,7 @@ public:
     int sectionIndexAtY(float worldY) const;
     std::string sectionFilename(int sectionIndex) const;
     
+    bool isSyntaxHighlightingSupported() const;
     bool isSyntaxHighlightingInProgress() const;
 
     void setTheme(Theme theme);

@@ -7,6 +7,8 @@
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
 #include <QDebug>
+#include <QColor>
+#include "ui/app_colors.h"
 
 #include <algorithm>
 #include <cmath>
@@ -14,6 +16,7 @@
 #include <mutex>
 #include <future>
 #include <atomic>
+#include <unordered_map>
 
 namespace jules {
 
@@ -392,9 +395,6 @@ public:
     std::vector<DiffLineInfo> visibleLines(float viewportTop, float viewportBottom) const {
         std::vector<DiffLineInfo> result;
         
-        int firstLine = static_cast<int>(std::max(0.0f, viewportTop / m_lineHeight - 10));
-        int lastLine = static_cast<int>((viewportBottom / m_lineHeight) + 10);
-        
         int currentLine = 0;
         for (size_t sectionIdx = 0; sectionIdx < m_sections.size(); ++sectionIdx) {
             const auto& section = m_sections[sectionIdx];
@@ -617,6 +617,10 @@ public:
         return result;
     }
     
+    bool syntaxHighlightingAvailable() const {
+        return m_syntaxHighlighter && m_syntaxHighlighter->isInitialized();
+    }
+
     bool syntaxHighlightingActive() const {
         return m_syntaxHighlightingActive.load();
     }
@@ -1328,6 +1332,10 @@ std::string DiffRenderer::selectedText() const { return m_impl->selectedText(); 
 
 int DiffRenderer::sectionIndexAtY(float worldY) const { return m_impl->sectionIndexAtY(worldY); }
 std::string DiffRenderer::sectionFilename(int sectionIndex) const { return m_impl->sectionFilename(sectionIndex); }
+
+bool DiffRenderer::isSyntaxHighlightingSupported() const {
+    return m_impl->syntaxHighlightingAvailable();
+}
 
 bool DiffRenderer::isSyntaxHighlightingInProgress() const {
     return m_impl->syntaxHighlightingActive();
