@@ -184,8 +184,12 @@ public:
     std::string sectionFilename(int sectionIndex) const;
     
     bool syntaxHighlightingAvailable() const;
+    bool isSyntaxHighlightingComplete() const;
 
     void setDarkMode(bool isDark);
+    void setTheme(const RGBA& background, const RGBA& backgroundSecondary, const RGBA& backgroundDark,
+                  const RGBA& textPrimary, const RGBA& textSecondary, const RGBA& accent,
+                  const RGBA& separator, bool isDark);
 
     void invalidateCache();
     

@@ -18,6 +18,7 @@
 
 #include <cmath>
 #include <algorithm>
+#include <unordered_map>
 
 namespace jules {
 
@@ -42,6 +43,9 @@ struct FontAtlas::Impl {
     std::array<GlyphDescriptor, 128> asciiGlyphs{};
     std::array<bool, 128> asciiValid{};
     
+    // Map for other Unicode codepoints
+    std::unordered_map<char32_t, GlyphDescriptor> unicodeGlyphs;
+
     bool valid = false;
     
     ~Impl() {
@@ -167,12 +171,15 @@ struct FontAtlas::Impl {
         }
         
         // ASCII printable range: 32 (space) to 126 (~)
-        constexpr int firstChar = 32;
-        constexpr int lastChar = 126;
-        constexpr int numChars = lastChar - firstChar + 1;  // 95 characters
+        // Plus some common Latin-1 and symbols for better out-of-the-box support
+        std::vector<char32_t> charsToRender;
+        for (char32_t c = 32; c <= 126; ++c) charsToRender.push_back(c);
+        for (char32_t c = 160; c <= 255; ++c) charsToRender.push_back(c);
+
+        int numChars = static_cast<int>(charsToRender.size());
         
         // Calculate grid size for atlas
-        int gridSize = static_cast<int>(std::ceil(std::sqrt(numChars)));  // 10x10 grid
+        int gridSize = static_cast<int>(std::ceil(std::sqrt(numChars)));
         
         // Get font metrics
         float ascender = ftFace->size->metrics.ascender / 64.0f;
@@ -185,7 +192,7 @@ struct FontAtlas::Impl {
         int maxWidth = 0;
         int maxHeight = 0;
         
-        for (int c = firstChar; c <= lastChar; ++c) {
+        for (char32_t c : charsToRender) {
             if (FT_Load_Char(ftFace, c, FT_LOAD_RENDER)) {
                 continue;
             }
@@ -214,9 +221,12 @@ struct FontAtlas::Impl {
         
         // Render each character
         int charIndex = 0;
-        for (int c = firstChar; c <= lastChar; ++c) {
+        unicodeGlyphs.clear();
+        asciiValid.fill(false);
+
+        for (char32_t c : charsToRender) {
             if (FT_Load_Char(ftFace, c, FT_LOAD_RENDER)) {
-                qWarning() << "FontAtlas: Failed to load character" << c;
+                qWarning() << "FontAtlas: Failed to load character" << (uint32_t)c;
                 charIndex++;
                 continue;
             }
@@ -237,8 +247,6 @@ struct FontAtlas::Impl {
                     int destY = atlasY + y;
                     
                     if (destX < textureWidth && destY < textureHeight) {
-                        // FreeType bitmaps are top-to-bottom, OpenGL textures are bottom-to-top
-                        // But we'll handle this in UV coordinates
                         atlasData[destY * textureWidth + destX] = 
                             g->bitmap.buffer[y * g->bitmap.pitch + x];
                     }
@@ -265,18 +273,18 @@ struct FontAtlas::Impl {
                 static_cast<float>(cellWidth) / scale,
                 static_cast<float>(cellHeight) / scale
             };
-            // Add padding to bearing so that the glyph quad is shifted up
-            // to compensate for the transparent padding rows at the top of the cell.
             desc.bearing = {
                 static_cast<float>(g->bitmap_left) / scale,
                 static_cast<float>(g->bitmap_top + padding) / scale
             };
             desc.advance = static_cast<float>(g->advance.x >> 6) / scale;
             
-            // Store in ASCII lookup table
-            if (c >= 0 && c < 128) {
+            // Store in appropriate table
+            if (c < 128) {
                 asciiGlyphs[c] = desc;
                 asciiValid[c] = true;
+            } else {
+                unicodeGlyphs[c] = desc;
             }
             
             charIndex++;
@@ -362,14 +370,16 @@ int FontAtlas::textureHeight() const {
     return m_impl->textureHeight;
 }
 
-std::optional<GlyphDescriptor> FontAtlas::getGlyph(char c) const {
-    unsigned char uc = static_cast<unsigned char>(c);
-    if (uc < 32 || uc > 126) {
-        return std::nullopt;
-    }
-    
-    if (m_impl->asciiValid[uc]) {
-        return m_impl->asciiGlyphs[uc];
+std::optional<GlyphDescriptor> FontAtlas::getGlyph(char32_t codepoint) const {
+    if (codepoint < 128) {
+        if (m_impl->asciiValid[codepoint]) {
+            return m_impl->asciiGlyphs[codepoint];
+        }
+    } else {
+        auto it = m_impl->unicodeGlyphs.find(codepoint);
+        if (it != m_impl->unicodeGlyphs.end()) {
+            return it->second;
+        }
     }
     
     return std::nullopt;
@@ -377,12 +387,28 @@ std::optional<GlyphDescriptor> FontAtlas::getGlyph(char c) const {
 
 const GlyphDescriptor* FontAtlas::getASCIIGlyph(char c) const {
     unsigned char uc = static_cast<unsigned char>(c);
-    if (uc < 32 || uc > 126) {
-        return nullptr;
+    if (uc < 128 && m_impl->asciiValid[uc]) {
+        return &m_impl->asciiGlyphs[uc];
     }
     
-    if (m_impl->asciiValid[uc]) {
-        return &m_impl->asciiGlyphs[uc];
+    return nullptr;
+}
+
+const GlyphDescriptor* FontAtlas::getGlyphDescriptor(char32_t codepoint) const {
+    if (codepoint < 128) {
+        if (m_impl->asciiValid[codepoint]) {
+            return &m_impl->asciiGlyphs[codepoint];
+        }
+    } else {
+        auto it = m_impl->unicodeGlyphs.find(codepoint);
+        if (it != m_impl->unicodeGlyphs.end()) {
+            return &it->second;
+        }
+    }
+
+    // Fallback to '?'
+    if (codepoint != '?' && m_impl->asciiValid['?']) {
+        return &m_impl->asciiGlyphs['?'];
     }
     
     return nullptr;

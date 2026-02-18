@@ -107,10 +107,10 @@ public:
     int textureHeight() const;
     
     /**
-     * Get glyph descriptor for a character.
-     * Returns nullopt for non-ASCII or control characters.
+     * Get glyph descriptor for a Unicode codepoint.
+     * Returns nullopt if the character is not in the atlas.
      */
-    std::optional<GlyphDescriptor> getGlyph(char c) const;
+    std::optional<GlyphDescriptor> getGlyph(char32_t codepoint) const;
     
     /**
      * Fast O(1) lookup for ASCII characters (32-126).
@@ -118,6 +118,12 @@ public:
      * Faster than getGlyph() for hot paths.
      */
     const GlyphDescriptor* getASCIIGlyph(char c) const;
+
+    /**
+     * Get glyph descriptor for any Unicode codepoint.
+     * Falls back to '?' if the character is not found.
+     */
+    const GlyphDescriptor* getGlyphDescriptor(char32_t codepoint) const;
     
     /**
      * Get the monospace advance width (from 'M' character).
