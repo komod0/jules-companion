@@ -354,6 +354,11 @@ void TrayPopupWidget::positionOnScreen(const QPoint& nearPos) {
     QRect avail = screen->availableGeometry();
     QRect full  = screen->geometry();
 
+    // Ensure popup fits on screen
+    if (height() > avail.height() - 20) {
+        setFixedHeight(std::max(200, avail.height() - 20));
+    }
+
     // Detect panel location by comparing available vs full geometry.
     int topGap    = avail.top()    - full.top();
     int bottomGap = full.bottom()  - avail.bottom();
