@@ -35,6 +35,7 @@ jobs:
             qt6-tools-dev-tools \
             libqt6opengl6-dev \
             libqt6sql6-sqlite \
+            libgl1-mesa-dev \
             libfreetype-dev \
             libxcb-keysyms1-dev \
             libfuse2 \

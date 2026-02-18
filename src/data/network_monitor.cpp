@@ -32,8 +32,16 @@ void NetworkMonitor::startMonitoring()
     qDebug() << "[NetworkMonitor] Starting connectivity monitoring";
 
     // Try QNetworkInformation native backend first (Qt 6.1+)
-    if (QNetworkInformation::loadDefaultBackend() || QNetworkInformation::loadBackendByFeatures(
-            QNetworkInformation::Feature::Reachability)) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 3, 0)
+    bool backendLoaded = QNetworkInformation::loadDefaultBackend() ||
+                         QNetworkInformation::loadBackendByFeatures(QNetworkInformation::Feature::Reachability);
+#else
+    // In Qt < 6.3, we just check if instance() is available;
+    // loader methods were added in 6.3.
+    bool backendLoaded = QNetworkInformation::instance() != nullptr;
+#endif
+
+    if (backendLoaded) {
         auto* netInfo = QNetworkInformation::instance();
         if (netInfo) {
             m_usingNativeBackend = true;

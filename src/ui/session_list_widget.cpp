@@ -10,6 +10,8 @@
 #include <QStyleOptionViewItem>
 #include <QMenu>
 #include <QClipboard>
+#include <QMessageBox>
+#include <QScrollBar>
 
 namespace jules {
 
@@ -60,8 +62,8 @@ public:
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing, true);
         
-        // Determine theme from palette
-        bool isDark = option.palette.window().color().lightness() < 128;
+        // Use current theme info from AppColors
+        bool isDark = AppColors::currentColors().isDark;
         
         // Check if this is a section header
         bool isHeader = index.data(Qt::UserRole + 4).toBool();
@@ -376,10 +378,59 @@ void SessionListWidget::refresh() {
 }
 
 void SessionListWidget::populateList() {
+    QList<Session> sessions = m_repository->getAllSessions();
+
+    // If nothing changed at all, skip
+    bool identical = (sessions.size() == m_cachedSessions.size());
+    if (identical) {
+        for (int i = 0; i < sessions.size(); ++i) {
+            // We can't easily compare the whole Session struct, but we can check ID and state
+            if (sessions[i].id != m_cachedSessions[i].id ||
+                sessions[i].state != m_cachedSessions[i].state ||
+                sessions[i].title != m_cachedSessions[i].title ||
+                sessions[i].updateTime != m_cachedSessions[i].updateTime) {
+                identical = false;
+                break;
+            }
+        }
+    }
+
+    if (identical && !m_cachedSessions.isEmpty()) {
+        return;
+    }
+
+    // Check if we can just update existing items (same IDs in same order)
+    bool sameOrder = (sessions.size() == m_cachedSessions.size());
+    if (sameOrder) {
+        for (int i = 0; i < sessions.size(); ++i) {
+            if (sessions[i].id != m_cachedSessions[i].id) {
+                sameOrder = false;
+                break;
+            }
+        }
+    }
+
+    if (sameOrder && !m_cachedSessions.isEmpty()) {
+        m_cachedSessions = sessions;
+        for (const auto& session : sessions) {
+            if (m_sessionIndexMap.contains(session.id)) {
+                int sessionIndex = m_sessionIndexMap[session.id];
+                int listIndex = sessionIndexToListIndex(sessionIndex);
+                if (listIndex >= 0 && listIndex < m_listWidget->count()) {
+                    updateSessionItem(m_listWidget->item(listIndex), session);
+                }
+            }
+        }
+        return;
+    }
+
+    // Full refresh: preserve selection and scroll position
+    QString selectedId = currentSessionId();
+    int scrollPos = m_listWidget->verticalScrollBar() ? m_listWidget->verticalScrollBar()->value() : 0;
+
     m_listWidget->clear();
     m_sessionIndexMap.clear();
     
-    QList<Session> sessions = m_repository->getAllSessions();
     m_cachedSessions = sessions;
 
     if (sessions.isEmpty()) {
@@ -448,6 +499,21 @@ void SessionListWidget::populateList() {
     
     m_listWidget->setVisible(true);
     m_emptyLabel->setVisible(false);
+
+    // Restore selection
+    if (!selectedId.isEmpty()) {
+        for (int i = 0; i < m_listWidget->count(); ++i) {
+            if (m_listWidget->item(i)->data(Qt::UserRole).toString() == selectedId) {
+                m_listWidget->setCurrentItem(m_listWidget->item(i));
+                break;
+            }
+        }
+    }
+
+    // Restore scroll position
+    if (m_listWidget->verticalScrollBar()) {
+        m_listWidget->verticalScrollBar()->setValue(scrollPos);
+    }
 }
 
 void SessionListWidget::addSectionHeader(const QString& title) {
@@ -462,7 +528,7 @@ void SessionListWidget::addSectionHeader(const QString& title) {
     headerItem->setFont(headerFont);
     
     // Use AppColors::textSecondary for proper theming
-    bool isDark = palette().window().color().lightness() < 128;
+    bool isDark = AppColors::currentColors().isDark;
     QColor headerColor = AppColors::textSecondary(isDark);
     headerItem->setForeground(headerColor);
 }
@@ -605,7 +671,7 @@ QString SessionListWidget::stateToText(SessionState state) const {
 
 QColor SessionListWidget::stateToColor(SessionState state) const {
     // Use AppColors for consistency
-    bool isDark = palette().window().color().lightness() < 128;
+    bool isDark = AppColors::currentColors().isDark;
     return AppColors::stateColor(static_cast<int>(state), isDark);
 }
 
@@ -714,6 +780,19 @@ void SessionListWidget::showContextMenu(const QPoint& pos) {
     });
     menu.addAction("Copy Session ID", [sessionId]() {
         QApplication::clipboard()->setText(sessionId);
+    });
+    menu.addSeparator();
+    menu.addAction("Delete Session", [this, sessionId]() {
+        auto result = QMessageBox::question(this, "Delete Session",
+                                            "Are you sure you want to delete this session?",
+                                            QMessageBox::Yes | QMessageBox::No);
+        if (result == QMessageBox::Yes) {
+            if (m_repository->deleteSession(sessionId)) {
+                refresh();
+            } else {
+                QMessageBox::warning(this, "Error", "Failed to delete session.");
+            }
+        }
     });
     menu.addSeparator();
     menu.addAction("Refresh", [this]() {
