@@ -11,6 +11,7 @@
 #include <QMenu>
 #include <QClipboard>
 #include <QMessageBox>
+#include <QScrollBar>
 
 namespace jules {
 
