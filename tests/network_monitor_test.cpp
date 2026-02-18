@@ -84,9 +84,7 @@ TEST_F(NetworkMonitorTest, ConnectivityChangedSignalCarriesBool) {
     NetworkMonitor monitor;
     QSignalSpy spy(&monitor, &NetworkMonitor::connectivityChanged);
     ASSERT_TRUE(spy.isValid());
-    // Verify the signal signature accepts bool by checking the spy parameterTypes
-    QList<int> paramTypes = spy.at(0).isEmpty() ? QList<int>{} : QList<int>{};
-    // The signal is connectivityChanged(bool), so if it ever fires, first arg is bool.
+    // Verify the signal signature accepts bool
     // We validate the spy is properly connected (isValid) and that the signal signature
     // is correct by checking the signal's parameter count.
     EXPECT_EQ(QMetaMethod::fromSignal(&NetworkMonitor::connectivityChanged).parameterCount(), 1);
