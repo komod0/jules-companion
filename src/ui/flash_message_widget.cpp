@@ -52,7 +52,7 @@ void FlashMessageWidget::setupUi() {
     m_fadeAnimation = new QPropertyAnimation(this, "opacity", this);
     m_fadeAnimation->setDuration(300);
     connect(m_fadeAnimation, &QPropertyAnimation::finished, this, [this]() {
-        if (m_opacity <= 0.01) {
+        if (m_fadeAnimation->endValue().toReal() < 0.1) {
             setVisible(false);
             emit dismissed();
         }

@@ -23,6 +23,7 @@
 #include <QVBoxLayout>
 
 #include "ui/main_window.h"
+#include "ui/app_colors.h"
 
 namespace jules {
 namespace test {
@@ -205,11 +206,9 @@ TEST_F(MainWindowTest, DarkThemeHasDarkBackground) {
     window.show();
     processEvents();
     
-    QPalette palette = window.palette();
-    QColor windowColor = palette.color(QPalette::Window);
-    
-    // Dark theme should have dark background (low lightness)
-    EXPECT_LT(windowColor.lightnessF(), 0.5);
+    EXPECT_EQ(window.effectiveTheme(), Theme::Dark);
+    ThemeColors colors = AppColors::colorsForTheme(window.effectiveTheme());
+    EXPECT_TRUE(colors.isDark);
 }
 
 TEST_F(MainWindowTest, LightThemeHasLightBackground) {
@@ -241,11 +240,8 @@ TEST_F(MainWindowTest, DraculaThemeHasDarkPalette) {
     processEvents();
 
     EXPECT_EQ(window.effectiveTheme(), Theme::Dracula);
-
-    QPalette palette = window.palette();
-    QColor windowColor = palette.color(QPalette::Window);
-    // Dracula is a dark theme
-    EXPECT_LT(windowColor.lightnessF(), 0.5);
+    ThemeColors colors = AppColors::colorsForTheme(window.effectiveTheme());
+    EXPECT_TRUE(colors.isDark);
 }
 
 TEST_F(MainWindowTest, ThemeEmitsSignalOnChange) {
@@ -326,10 +322,10 @@ TEST_F(MainWindowTest, AllDarkThemesHaveDarkPalette) {
         window.setTheme(theme);
         processEvents();
 
-        QPalette pal = window.palette();
-        QColor bg = pal.color(QPalette::Window);
-        EXPECT_LT(bg.lightnessF(), 0.5)
-            << "Theme " << static_cast<int>(theme) << " should have dark background";
+        EXPECT_EQ(window.effectiveTheme(), theme);
+        ThemeColors colors = AppColors::colorsForTheme(window.effectiveTheme());
+        EXPECT_TRUE(colors.isDark)
+            << "Theme " << static_cast<int>(theme) << " should be dark";
     }
 }
 
