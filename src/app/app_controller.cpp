@@ -192,7 +192,7 @@ void AppController::connectSignals()
         bool isDark = AppColors::colorsForTheme(eff).isDark;
         m_systemTray->updateTheme(isDark);
         if (m_sessionDetailWidget->diffPanel()) {
-            m_sessionDetailWidget->diffPanel()->updateDarkMode(isDark);
+            m_sessionDetailWidget->diffPanel()->updateTheme();
         }
     });
     // Set initial tray/diff theme

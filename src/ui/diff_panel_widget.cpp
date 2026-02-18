@@ -93,6 +93,16 @@ DiffPanelWidget::DiffPanelWidget(QWidget* parent)
         update();
     });
 
+    m_syntaxTimer = new QTimer(this);
+    m_syntaxTimer->setInterval(100); // 10 FPS poll for syntax
+    connect(m_syntaxTimer, &QTimer::timeout, this, [this]() {
+        if (m_diffRenderer && m_diffRenderer->isSyntaxHighlightingComplete()) {
+            m_syntaxTimer->stop();
+            qDebug() << "[DiffPanelWidget] Syntax highlighting complete, repainting";
+            update();
+        }
+    });
+
     qDebug() << "[DiffPanelWidget] Constructor called";
 }
 
@@ -137,15 +147,40 @@ void DiffPanelWidget::releaseResources() {
     qDebug() << "[DiffPanelWidget] Resources released for memory savings";
 }
 
-void DiffPanelWidget::updateDarkMode(bool isDark) {
-    if (isDark == m_isDark) return;
-    m_isDark = isDark;
+void DiffPanelWidget::updateTheme() {
+    const auto& colors = AppColors::currentColors();
+    m_isDark = colors.isDark;
+
     if (m_diffRenderer) {
+        auto toRgba = [](const QColor& c) {
+            return RGBA{c.redF(), c.greenF(), c.blueF(), c.alphaF()};
+        };
+
         makeCurrent();
-        m_diffRenderer->setDarkMode(isDark);
+        m_diffRenderer->setTheme(
+            toRgba(colors.background),
+            toRgba(colors.backgroundSecondary),
+            toRgba(colors.backgroundDark),
+            toRgba(colors.textPrimary),
+            toRgba(colors.textSecondary),
+            toRgba(colors.accent),
+            toRgba(colors.separator),
+            colors.isDark
+        );
+
+        if (!m_diffRenderer->isSyntaxHighlightingComplete()) {
+            m_syntaxTimer->start();
+        }
+
         doneCurrent();
     }
     update();
+}
+
+void DiffPanelWidget::updateDarkMode(bool isDark) {
+    // For backwards compatibility and testing
+    AppColors::setCurrentTheme(isDark ? Theme::Dark : Theme::Light);
+    updateTheme();
 }
 
 void DiffPanelWidget::setLoading(bool loading) {
@@ -376,6 +411,12 @@ void DiffPanelWidget::setDiffs(const QList<CachedDiff>& diffs) {
         m_diffRenderer->setDiffSections(sections);
         m_scrollOffset = 0.0f;
         updateScrollBar();
+
+        // Start polling for syntax highlighting
+        if (!m_diffRenderer->isSyntaxHighlightingComplete()) {
+            m_syntaxTimer->start();
+        }
+
         update(); // Trigger repaint
     } else {
         // Store for later when renderer is initialized
@@ -433,6 +474,9 @@ void DiffPanelWidget::initializeGL() {
 
         m_initialized = true;
         qDebug() << "[DiffPanelWidget::initializeGL] Fully initialized";
+
+        // Set initial theme colors
+        updateTheme();
 
         // Apply any pending diffs that were set before initialization
         if (!m_pendingDiffs.empty()) {

@@ -3,6 +3,7 @@
 #include "rendering/font_atlas.h"
 #include "highlighting/syntax_highlighter.h"
 #include "data/settings_manager.h"
+#include "ui/app_colors.h"
 
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
@@ -13,6 +14,7 @@
 #include <sstream>
 #include <mutex>
 #include <future>
+#include <atomic>
 
 namespace jules {
 
@@ -251,7 +253,12 @@ ParsedPatchResult parsePatch(const std::string& patch, const std::string& langua
 class DiffRenderer::Impl {
 public:
     Impl() : m_colors(createDarkColors()) {}
-    ~Impl() = default;
+    ~Impl() {
+        m_syntaxTaskVersion++; // Signal cancellation
+        for (auto& f : m_syntaxFutures) {
+            if (f.valid()) f.wait();
+        }
+    }
     
     bool initialize() {
         auto* ctx = QOpenGLContext::currentContext();
@@ -620,6 +627,10 @@ public:
         return m_syntaxHighlighter && m_syntaxHighlighter->isInitialized();
     }
 
+    bool isSyntaxHighlightingComplete() const {
+        return m_syntaxComplete;
+    }
+
     void setSharedSyntaxCache(SharedSyntaxCache* cache) {
         m_sharedSyntaxCache = cache;
     }
@@ -628,6 +639,45 @@ public:
         if (m_isDark == isDark) return;
         m_isDark = isDark;
         m_colors = isDark ? createDarkColors() : createLightColors();
+        m_syntaxColorCache.clear();
+        parseSyntaxAsync();
+        invalidateCache();
+    }
+
+    void setTheme(const RGBA& background, const RGBA& backgroundSecondary, const RGBA& backgroundDark,
+                  const RGBA& textPrimary, const RGBA& textSecondary, const RGBA& accent,
+                  const RGBA& separator, bool isDark) {
+        m_isDark = isDark;
+
+        // Base colors from theme
+        m_colors.textDefault = textPrimary;
+        m_colors.headerBg = background;
+        m_colors.gutterBg = backgroundDark;
+        m_colors.gutterText = textSecondary;
+        m_colors.sectionBorder = separator;
+        m_colors.contentBgValue = isDark ? 0.05f : 1.0f;
+
+        // Semantic colors (derive added/removed from standard palette or keep defaults)
+        if (isDark) {
+            m_colors.addedBg = {0.424f, 0.749f, 0.263f, 0.15f};
+            m_colors.removedBg = {1.0f, 0.451f, 0.514f, 0.15f};
+            m_colors.statsAddedText = {0.502f, 0.969f, 0.588f, 1.0f};
+            m_colors.statsAddedBg = {0.502f, 0.969f, 0.588f, 0.15f};
+            m_colors.statsRemovedText = {1.0f, 0.404f, 0.404f, 1.0f};
+            m_colors.statsRemovedBg = {1.0f, 0.404f, 0.404f, 0.15f};
+            m_colors.inlineAddedBg = {0.424f, 0.749f, 0.263f, 0.35f};
+            m_colors.inlineRemovedBg = {1.0f, 0.451f, 0.514f, 0.35f};
+        } else {
+            m_colors.addedBg = {0.075f, 0.6f, 0.086f, 0.12f};
+            m_colors.removedBg = {1.0f, 0.063f, 0.031f, 0.10f};
+            m_colors.statsAddedText = {0.075f, 0.6f, 0.086f, 1.0f};
+            m_colors.statsAddedBg = {0.075f, 0.6f, 0.086f, 0.15f};
+            m_colors.statsRemovedText = {1.0f, 0.063f, 0.031f, 1.0f};
+            m_colors.statsRemovedBg = {1.0f, 0.063f, 0.031f, 0.15f};
+            m_colors.inlineAddedBg = {0.075f, 0.6f, 0.086f, 0.25f};
+            m_colors.inlineRemovedBg = {1.0f, 0.063f, 0.031f, 0.22f};
+        }
+
         m_syntaxColorCache.clear();
         parseSyntaxAsync();
         invalidateCache();
@@ -659,118 +709,133 @@ private:
             return;
         }
 
-        m_syntaxColorCache.clear();
+        m_syntaxComplete = false;
 
-        int globalLineIdx = 0;
-        for (const auto& section : m_sections) {
-            if (section.language.empty()) {
-                globalLineIdx += static_cast<int>(section.lines.size());
-                continue;
-            }
+        {
+            std::lock_guard<std::mutex> lock(m_syntaxMutex);
+            m_syntaxColorCache.clear();
+        }
 
-            std::string fullContent;
-            for (const auto& line : section.lines) {
-                fullContent += line.content + "\n";
-            }
+        // Deep copy needed for background thread
+        auto sections = m_sections;
+        bool isDark = m_isDark;
+        auto* sharedCache = m_sharedSyntaxCache;
+        auto* highlighter = m_syntaxHighlighter.get();
 
-            // Check shared cache first
-            std::size_t contentHash = std::hash<std::string>{}(fullContent);
-            bool cacheHit = false;
+        // Increment version to cancel older tasks
+        uint32_t currentVersion = ++m_syntaxTaskVersion;
 
-            if (m_sharedSyntaxCache) {
-                SharedSyntaxCache::CacheKey cacheKey{contentHash, section.language, m_isDark};
-                auto cached = m_sharedSyntaxCache->get(cacheKey);
-                if (cached) {
-                    // Distribute cached per-line tokens into m_syntaxColorCache
-                    // The cached vector stores all tokens flattened; we need to re-split by line
-                    // Actually, the shared cache stores the full highlight tokens for the content block.
-                    // We process them the same way as fresh tokens below.
-                    cacheHit = true;
+        // Clean up finished futures to avoid memory leak
+        auto it = std::remove_if(m_syntaxFutures.begin(), m_syntaxFutures.end(),
+            [](const std::future<void>& f) {
+                return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+            });
+        m_syntaxFutures.erase(it, m_syntaxFutures.end());
 
-                    // Rebuild line starts for distribution
-                    std::vector<size_t> lineStarts;
-                    lineStarts.push_back(0);
-                    for (size_t i = 0; i < fullContent.size(); ++i) {
-                        if (fullContent[i] == '\n') {
-                            lineStarts.push_back(i + 1);
-                        }
-                    }
+        m_syntaxFutures.push_back(std::async(std::launch::async,
+            [this, sections, isDark, sharedCache, highlighter, currentVersion]() {
+            int globalLineIdx = 0;
+            for (const auto& section : sections) {
+                if (currentVersion != m_syntaxTaskVersion) return;
 
-                    for (const auto& colorToken : *cached) {
-                        size_t lineIdx = std::upper_bound(lineStarts.begin(), lineStarts.end(),
-                            colorToken.start) - lineStarts.begin() - 1;
-
-                        if (lineIdx < section.lines.size()) {
-                            SyntaxColorToken localToken;
-                            localToken.start = colorToken.start - lineStarts[lineIdx];
-                            localToken.end = colorToken.end - lineStarts[lineIdx];
-                            localToken.color = colorToken.color;
-                            m_syntaxColorCache[globalLineIdx + static_cast<int>(lineIdx)].push_back(localToken);
-                        }
-                    }
-
+                if (section.language.empty()) {
                     globalLineIdx += static_cast<int>(section.lines.size());
                     continue;
                 }
-            }
 
-            auto tokens = m_syntaxHighlighter->highlight(fullContent, section.language);
-
-            std::vector<size_t> lineStarts;
-            lineStarts.push_back(0);
-            for (size_t i = 0; i < fullContent.size(); ++i) {
-                if (fullContent[i] == '\n') {
-                    lineStarts.push_back(i + 1);
-                }
-            }
-
-            // Build tokens for shared cache storage (absolute offsets, normalized colors)
-            std::vector<SyntaxColorToken> cacheTokens;
-            if (m_sharedSyntaxCache) {
-                cacheTokens.reserve(tokens.size());
-            }
-
-            for (const auto& token : tokens) {
-                size_t lineIdx = std::upper_bound(lineStarts.begin(), lineStarts.end(),
-                    token.start) - lineStarts.begin() - 1;
-
-                if (lineIdx < section.lines.size()) {
-                    SyntaxColorToken colorToken;
-                    colorToken.start = token.start - lineStarts[lineIdx];
-                    colorToken.end = token.end - lineStarts[lineIdx];
-                    colorToken.color = {
-                        token.color.r / 255.0f,
-                        token.color.g / 255.0f,
-                        token.color.b / 255.0f,
-                        token.color.a / 255.0f
-                    };
-
-                    m_syntaxColorCache[globalLineIdx + static_cast<int>(lineIdx)].push_back(colorToken);
+                std::string fullContent;
+                for (const auto& line : section.lines) {
+                    fullContent += line.content + "\n";
                 }
 
-                // Store with absolute offsets and normalized colors for the shared cache
-                if (m_sharedSyntaxCache) {
-                    SyntaxColorToken absToken;
-                    absToken.start = token.start;
-                    absToken.end = token.end;
-                    absToken.color = {
-                        token.color.r / 255.0f,
-                        token.color.g / 255.0f,
-                        token.color.b / 255.0f,
-                        token.color.a / 255.0f
-                    };
-                    cacheTokens.push_back(absToken);
+                // Check shared cache first
+                std::size_t contentHash = std::hash<std::string>{}(fullContent);
+
+                if (sharedCache) {
+                    SharedSyntaxCache::CacheKey cacheKey{contentHash, section.language, isDark};
+                    auto cached = sharedCache->get(cacheKey);
+                    if (cached) {
+                        std::vector<size_t> lineStarts;
+                        lineStarts.push_back(0);
+                        for (size_t i = 0; i < fullContent.size(); ++i) {
+                            if (fullContent[i] == '\n') lineStarts.push_back(i + 1);
+                        }
+
+                        std::lock_guard<std::mutex> lock(m_syntaxMutex);
+                        if (currentVersion != m_syntaxTaskVersion) return;
+                        for (const auto& colorToken : *cached) {
+                            size_t lineIdx = std::upper_bound(lineStarts.begin(), lineStarts.end(),
+                                colorToken.start) - lineStarts.begin() - 1;
+
+                            if (lineIdx < section.lines.size()) {
+                                SyntaxColorToken localToken;
+                                localToken.start = colorToken.start - lineStarts[lineIdx];
+                                localToken.end = colorToken.end - lineStarts[lineIdx];
+                                localToken.color = colorToken.color;
+                                m_syntaxColorCache[globalLineIdx + static_cast<int>(lineIdx)].push_back(localToken);
+                            }
+                        }
+
+                        globalLineIdx += static_cast<int>(section.lines.size());
+                        continue;
+                    }
                 }
+
+                auto tokens = highlighter->highlight(fullContent, section.language);
+
+                std::vector<size_t> lineStarts;
+                lineStarts.push_back(0);
+                for (size_t i = 0; i < fullContent.size(); ++i) {
+                    if (fullContent[i] == '\n') lineStarts.push_back(i + 1);
+                }
+
+                std::vector<SyntaxColorToken> cacheTokens;
+                if (sharedCache) cacheTokens.reserve(tokens.size());
+
+                {
+                    std::lock_guard<std::mutex> lock(m_syntaxMutex);
+                    if (currentVersion != m_syntaxTaskVersion) return;
+                    for (const auto& token : tokens) {
+                        size_t lineIdx = std::upper_bound(lineStarts.begin(), lineStarts.end(),
+                            token.start) - lineStarts.begin() - 1;
+
+                        if (lineIdx < section.lines.size()) {
+                            SyntaxColorToken colorToken;
+                            colorToken.start = token.start - lineStarts[lineIdx];
+                            colorToken.end = token.end - lineStarts[lineIdx];
+                            colorToken.color = {
+                                token.color.r / 255.0f, token.color.g / 255.0f,
+                                token.color.b / 255.0f, token.color.a / 255.0f
+                            };
+
+                            m_syntaxColorCache[globalLineIdx + static_cast<int>(lineIdx)].push_back(colorToken);
+                        }
+
+                        if (sharedCache) {
+                            SyntaxColorToken absToken;
+                            absToken.start = token.start;
+                            absToken.end = token.end;
+                            absToken.color = {
+                                token.color.r / 255.0f, token.color.g / 255.0f,
+                                token.color.b / 255.0f, token.color.a / 255.0f
+                            };
+                            cacheTokens.push_back(absToken);
+                        }
+                    }
+                }
+
+                if (sharedCache) {
+                    SharedSyntaxCache::CacheKey cacheKey{contentHash, section.language, isDark};
+                    sharedCache->put(cacheKey, std::move(cacheTokens));
+                }
+
+                globalLineIdx += static_cast<int>(section.lines.size());
             }
 
-            // Store in shared cache
-            if (m_sharedSyntaxCache) {
-                SharedSyntaxCache::CacheKey cacheKey{contentHash, section.language, m_isDark};
-                m_sharedSyntaxCache->put(cacheKey, std::move(cacheTokens));
+            if (currentVersion == m_syntaxTaskVersion) {
+                m_syntaxComplete = true;
             }
-
-            globalLineIdx += static_cast<int>(section.lines.size());
-        }
+        }));
     }
     
     void generateBackgrounds(float viewportTop, float viewportBottom) {
@@ -1123,60 +1188,76 @@ private:
                 
                 int globalLineIdx = globalLineBase + static_cast<int>(lineIdx);
                 std::vector<SyntaxColorToken> syntaxColors;
-                auto cacheIt = m_syntaxColorCache.find(globalLineIdx);
-                if (cacheIt != m_syntaxColorCache.end()) {
-                    syntaxColors = cacheIt->second;
+                {
+                    std::lock_guard<std::mutex> lock(m_syntaxMutex);
+                    auto cacheIt = m_syntaxColorCache.find(globalLineIdx);
+                    if (cacheIt != m_syntaxColorCache.end()) {
+                        syntaxColors = cacheIt->second;
+                    }
                 }
                 
                 float textX = DiffRenderer::kHorizontalPadding + DiffRenderer::kGutterWidth + 
                     10.0f - sectionScrollX;
                 
-                for (size_t charIdx = 0; charIdx < line.content.size(); ++charIdx) {
-                    char c = line.content[charIdx];
-                    
-                    if (c == ' ') {
-                        textX += m_monoAdvance;
-                        continue;
+                QString qContent = QString::fromStdString(line.content);
+                size_t currentByteOffset = 0;
+
+                for (int i = 0; i < qContent.length(); ) {
+                    uint32_t cp;
+                    int charLen;
+                    if (qContent.at(i).isHighSurrogate() && i + 1 < qContent.length()) {
+                        cp = QChar::surrogateToUcs4(qContent.at(i), qContent.at(i+1));
+                        charLen = 2;
+                    } else {
+                        cp = qContent.at(i).unicode();
+                        charLen = 1;
                     }
-                    if (c == '\t') {
+                    
+                    size_t utf8Len = QString(qContent.mid(i, charLen)).toUtf8().size();
+                    
+                    if (cp == ' ') {
+                        textX += m_monoAdvance;
+                    } else if (cp == '\t') {
                         textX += m_monoAdvance * 4.0f;
-                        continue;
-                    }
-                    
-                    const auto* glyph = m_fontAtlas->getASCIIGlyph(c);
-                    if (!glyph) {
-                        textX += m_monoAdvance;
-                        continue;
-                    }
-                    
-                    RGBA textColor = m_colors.textDefault;
-                    if (!syntaxColors.empty()) {
-                        auto it = std::upper_bound(syntaxColors.begin(), syntaxColors.end(), charIdx,
-                            [](size_t idx, const SyntaxColorToken& tok) { return idx < tok.start; });
-                        if (it != syntaxColors.begin()) {
-                            --it;
-                            if (charIdx < it->end) {
-                                textColor = it->color;
+                    } else {
+                        const auto* glyph = m_fontAtlas->getGlyphDescriptor(cp);
+                        if (glyph) {
+                            RGBA textColor = m_colors.textDefault;
+                            if (!syntaxColors.empty()) {
+                                // Match using byte offset
+                                auto it = std::upper_bound(syntaxColors.begin(), syntaxColors.end(), currentByteOffset,
+                                    [](size_t idx, const SyntaxColorToken& tok) { return idx < tok.start; });
+                                if (it != syntaxColors.begin()) {
+                                    --it;
+                                    if (currentByteOffset < it->end) {
+                                        textColor = it->color;
+                                    }
+                                }
                             }
+
+                            DiffInstanceData inst;
+                            inst.originX = textX;
+                            inst.originY = baselineY - glyph->bearing.y;
+                            inst.sizeX = glyph->size.x;
+                            inst.sizeY = glyph->size.y;
+                            inst.uvMinX = glyph->uvMin.x;
+                            inst.uvMinY = glyph->uvMin.y;
+                            inst.uvMaxX = glyph->uvMax.x;
+                            inst.uvMaxY = glyph->uvMax.y;
+                            inst.colorR = textColor.r;
+                            inst.colorG = textColor.g;
+                            inst.colorB = textColor.b;
+                            inst.colorA = textColor.a;
+
+                            m_cachedTextInstances.push_back(inst);
+                            textX += glyph->advance;
+                        } else {
+                            textX += m_monoAdvance;
                         }
                     }
                     
-                    DiffInstanceData inst;
-                    inst.originX = textX;
-                    inst.originY = baselineY - glyph->bearing.y;
-                    inst.sizeX = glyph->size.x;
-                    inst.sizeY = glyph->size.y;
-                    inst.uvMinX = glyph->uvMin.x;
-                    inst.uvMinY = glyph->uvMin.y;
-                    inst.uvMaxX = glyph->uvMax.x;
-                    inst.uvMaxY = glyph->uvMax.y;
-                    inst.colorR = textColor.r;
-                    inst.colorG = textColor.g;
-                    inst.colorB = textColor.b;
-                    inst.colorA = textColor.a;
-                    
-                    m_cachedTextInstances.push_back(inst);
-                    textX += glyph->advance;
+                    currentByteOffset += utf8Len;
+                    i += charLen;
                 }
             }
         }
@@ -1202,6 +1283,10 @@ private:
     float m_totalHeight = 0.0f;
     
     std::unordered_map<int, std::vector<SyntaxColorToken>> m_syntaxColorCache;
+    mutable std::mutex m_syntaxMutex;
+    std::atomic<uint32_t> m_syntaxTaskVersion{0};
+    std::atomic<bool> m_syntaxComplete{false};
+    std::vector<std::future<void>> m_syntaxFutures;
     std::unordered_map<int, float> m_horizontalScrolls;
     
     DiffColors m_colors;
@@ -1280,12 +1365,22 @@ bool DiffRenderer::syntaxHighlightingAvailable() const {
     return m_impl->syntaxHighlightingAvailable();
 }
 
+bool DiffRenderer::isSyntaxHighlightingComplete() const {
+    return m_impl->isSyntaxHighlightingComplete();
+}
+
 void DiffRenderer::setSharedSyntaxCache(SharedSyntaxCache* cache) {
     m_impl->setSharedSyntaxCache(cache);
 }
 
 void DiffRenderer::setDarkMode(bool isDark) {
     m_impl->setDarkMode(isDark);
+}
+
+void DiffRenderer::setTheme(const RGBA& background, const RGBA& backgroundSecondary, const RGBA& backgroundDark,
+                            const RGBA& textPrimary, const RGBA& textSecondary, const RGBA& accent,
+                            const RGBA& separator, bool isDark) {
+    m_impl->setTheme(background, backgroundSecondary, backgroundDark, textPrimary, textSecondary, accent, separator, isDark);
 }
 
 void DiffRenderer::invalidateCache() { m_impl->invalidateCache(); }

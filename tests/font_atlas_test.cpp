@@ -212,15 +212,39 @@ TEST_F(OpenGLTestFixture, FontAtlasFontSizeAffectsMetrics) {
     EXPECT_GT(atlas24.lineHeight(), atlas12.lineHeight());
 }
 
-TEST_F(OpenGLTestFixture, FontAtlasNonASCIICharacterReturnsNullopt) {
+TEST_F(OpenGLTestFixture, FontAtlasSupportsUnicodeCharacters) {
     jules::FontAtlas atlas;
     if (!atlas.initialize(12.0f, 2.0f)) {
         GTEST_SKIP() << "Font initialization failed (no fonts in CI container)";
     }
     
-    // Non-ASCII characters should return nullopt
-    auto nonAscii = atlas.getGlyph(static_cast<char>(200));
-    EXPECT_FALSE(nonAscii.has_value());
+    // Latin-1 characters should be supported
+    auto char200 = atlas.getGlyph(static_cast<char32_t>(200));
+    EXPECT_TRUE(char200.has_value());
+
+    // German umlaut
+    auto umlaut = atlas.getGlyph(U'ü');
+    EXPECT_TRUE(umlaut.has_value());
+}
+
+TEST_F(OpenGLTestFixture, FontAtlasFallbackForUnsupportedCharacters) {
+    jules::FontAtlas atlas;
+    if (!atlas.initialize(12.0f, 2.0f)) {
+        GTEST_SKIP() << "Font initialization failed (no fonts in CI container)";
+    }
+
+    // Characters not in atlas should return nullopt for getGlyph
+    auto unsupported = atlas.getGlyph(U'🚀');
+    EXPECT_FALSE(unsupported.has_value());
+
+    // But getGlyphDescriptor should fall back to '?'
+    auto fallback = atlas.getGlyphDescriptor(U'🚀');
+    auto questionMark = atlas.getASCIIGlyph('?');
+
+    if (questionMark) {
+        ASSERT_TRUE(fallback != nullptr);
+        EXPECT_EQ(fallback->glyphIndex, questionMark->glyphIndex);
+    }
 }
 
 TEST_F(OpenGLTestFixture, FontAtlasControlCharacterReturnsNullopt) {

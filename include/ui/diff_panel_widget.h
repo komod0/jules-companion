@@ -40,7 +40,8 @@ public:
     void releaseResources();
 
     // Theme support — call when app theme changes
-    void updateDarkMode(bool isDark);
+    void updateTheme();
+    void updateDarkMode(bool isDark); // Convenience wrapper
 
 signals:
     void openglFailed(const QString& reason);
@@ -103,6 +104,7 @@ private:
     // Loading state
     bool m_isLoading = false;
     QTimer* m_loadingTimer = nullptr;
+    QTimer* m_syntaxTimer = nullptr;
     QElapsedTimer m_loadingElapsed;
     
     // Bubble animation state
