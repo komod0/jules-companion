@@ -52,6 +52,7 @@ signals:
     void sessionSelected(const QString& sessionId);
     void createNewRequested();
     void openInBrowserRequested(const QString& sessionId);
+    void deleteSessionRequested(const QString& sessionId);
     void refreshed();
 
 private slots:

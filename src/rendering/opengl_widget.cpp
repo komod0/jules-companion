@@ -360,7 +360,14 @@ void OpenGLTextWidget::buildTextInstances() {
     float colorB = 0.9f;
     float colorA = 1.0f;
     
-    for (char c : m_text) {
+    QString qtext = QString::fromStdString(m_text);
+    for (int i = 0; i < qtext.length(); ++i) {
+        char32_t c = qtext[i].unicode();
+        if (qtext[i].isHighSurrogate() && i + 1 < qtext.length()) {
+            c = QChar::surrogateToUcs4(qtext[i], qtext[i+1]);
+            i++;
+        }
+
         if (c == '\n') {
             x = 10.0f;
             y += lineHeight;

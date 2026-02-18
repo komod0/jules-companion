@@ -40,7 +40,7 @@ public:
     void releaseResources();
 
     // Theme support — call when app theme changes
-    void updateDarkMode(bool isDark);
+    void updateTheme(Theme theme);
 
 signals:
     void openglFailed(const QString& reason);
@@ -135,6 +135,8 @@ private:
     void updateScrollBar();
 
     QScrollBar* m_scrollBar = nullptr;
+    QTimer* m_syntaxPollTimer = nullptr;
+    bool m_syntaxHighlightingWasActive = false;
 };
 
 } // namespace jules

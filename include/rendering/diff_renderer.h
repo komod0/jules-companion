@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <optional>
 #include <cstddef>
+#include "data/settings_manager.h"
 
 namespace jules {
 
@@ -183,9 +184,9 @@ public:
     int sectionIndexAtY(float worldY) const;
     std::string sectionFilename(int sectionIndex) const;
     
-    bool syntaxHighlightingAvailable() const;
+    bool isSyntaxHighlightingInProgress() const;
 
-    void setDarkMode(bool isDark);
+    void setTheme(Theme theme);
 
     void invalidateCache();
     

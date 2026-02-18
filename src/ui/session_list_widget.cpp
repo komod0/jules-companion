@@ -716,6 +716,11 @@ void SessionListWidget::showContextMenu(const QPoint& pos) {
         QApplication::clipboard()->setText(sessionId);
     });
     menu.addSeparator();
+    QAction* deleteAction = menu.addAction("Delete Session", [this, sessionId]() {
+        emit deleteSessionRequested(sessionId);
+    });
+    deleteAction->setIcon(QIcon::fromTheme("edit-delete"));
+    menu.addSeparator();
     menu.addAction("Refresh", [this]() {
         refresh();
     });
