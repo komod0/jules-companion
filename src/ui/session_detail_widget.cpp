@@ -778,12 +778,12 @@ void SessionDetailWidget::populateActivities() {
                 : QString("Session failed: %1").arg(
                     activity.sessionFailed->reason.value_or("Unknown error"));
 
-            QColor bannerBg = isCompleted
-                ? QColor(0, 200, 83, 38)   // green 15% alpha
-                : QColor(255, 59, 48, 38);  // red 15% alpha
             QColor bannerTextColor = isCompleted
-                ? QColor(0, 200, 83)
-                : QColor(255, 59, 48);
+                ? AppColors::running(isDark)
+                : AppColors::destructive(isDark);
+
+            QColor bannerBg = bannerTextColor;
+            bannerBg.setAlphaF(0.15);
 
             auto* bannerWidget = new QWidget();
             auto* bannerLayout = new QHBoxLayout(bannerWidget);
@@ -856,7 +856,7 @@ void SessionDetailWidget::populateActivities() {
                 ? AppColors::accent(isDark)
                 : AppColors::backgroundSecondary(isDark);
             QColor bubbleText = isUser
-                ? QColor(255, 255, 255)  // White for user bubbles
+            ? Qt::white  // White for user bubbles
                 : AppColors::textPrimary(isDark);
 
             int borderRadius = isUser ? 18 : 16;
@@ -1083,19 +1083,23 @@ QString SessionDetailWidget::markdownToHtml(const QString& markdown, bool isDark
 
         // Bullet lists (- item or * item)
         bool lineHandled = false;
-        static QRegularExpression ulRe(R"(^[\-\*] (.+)$)");
+        static QRegularExpression ulRe(R"(^( *)([\-\*]) (.+)$)");
         auto ulMatch = ulRe.match(line);
         if (ulMatch.hasMatch()) {
-            resultLines.append(QString("<li style='margin-left: 16px;'>%1</li>").arg(ulMatch.captured(1)));
+            int indent = ulMatch.captured(1).length();
+            resultLines.append(QString("<li style='margin-left: %1px;'>%2</li>")
+                .arg(16 + indent * 8).arg(ulMatch.captured(3)));
             lineHandled = true;
         }
 
         // Numbered lists (1. item)
         if (!lineHandled) {
-            static QRegularExpression olRe(R"(^\d+\. (.+)$)");
+            static QRegularExpression olRe(R"(^( *)(\d+)\. (.+)$)");
             auto olMatch = olRe.match(line);
             if (olMatch.hasMatch()) {
-                resultLines.append(QString("<li style='margin-left: 16px;'>%1</li>").arg(olMatch.captured(1)));
+                int indent = olMatch.captured(1).length();
+                resultLines.append(QString("<li style='margin-left: %1px;'>%2</li>")
+                    .arg(16 + indent * 8).arg(olMatch.captured(3)));
                 lineHandled = true;
             }
         }
@@ -1112,9 +1116,13 @@ QString SessionDetailWidget::markdownToHtml(const QString& markdown, bool isDark
         static QRegularExpression inlineCodeRe(R"(`([^`]+)`)");
         lastLine.replace(inlineCodeRe, QString("<code style='background-color: %1; color: %2; padding: 2px 4px; border-radius: 2px; font-family: monospace;'>\\1</code>").arg(codeBg).arg(accentLightColor));
 
-        // Links [text](url)
-        static QRegularExpression linkRe(R"(\[([^\]]+)\]\(([^\)]+)\))");
+        // Links [text](url) - avoid matching images ![alt](url)
+        static QRegularExpression linkRe(R"((?<!\!)\[([^\]]+)\]\(([^\)]+)\))");
         lastLine.replace(linkRe, QString("<a href='\\2' style='color: %1;'>\\1</a>").arg(accentColor));
+
+        // Images ![alt](url) - just show as a link for now
+        static QRegularExpression imgRe(R"(\!\[([^\]]+)\]\(([^\)]+)\))");
+        lastLine.replace(imgRe, QString("<a href='\\2' style='color: %1;'>🖼 \\1</a>").arg(accentColor));
 
         // Bold (**text** or __text__)
         static QRegularExpression boldRe(R"(\*\*([^\*]+)\*\*)");
