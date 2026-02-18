@@ -18,6 +18,7 @@
 
 #include <cmath>
 #include <algorithm>
+#include <unordered_map>
 
 namespace jules {
 
@@ -38,10 +39,13 @@ struct FontAtlas::Impl {
     float monoAdvanceValue = 8.0f;
     float lineHeightValue = 18.0f;
     
-    // ASCII fast-path lookup (indices 0-127, only 32-126 are valid)
-    std::array<GlyphDescriptor, 128> asciiGlyphs{};
-    std::array<bool, 128> asciiValid{};
+    // Fast-path lookup for common characters (0-255)
+    std::array<GlyphDescriptor, 256> fastGlyphs{};
+    std::array<bool, 256> fastValid{};
     
+    // Map for other Unicode characters
+    std::unordered_map<char32_t, GlyphDescriptor> otherGlyphs;
+
     bool valid = false;
     
     ~Impl() {
@@ -166,29 +170,29 @@ struct FontAtlas::Impl {
             return false;
         }
         
-        // ASCII printable range: 32 (space) to 126 (~)
-        constexpr int firstChar = 32;
-        constexpr int lastChar = 126;
-        constexpr int numChars = lastChar - firstChar + 1;  // 95 characters
+        // Collect characters to include in the atlas
+        std::vector<char32_t> chars;
+        // Basic Latin (32-126)
+        for (char32_t c = 32; c <= 126; ++c) chars.push_back(c);
+        // Latin-1 Supplement (160-255)
+        for (char32_t c = 160; c <= 255; ++c) chars.push_back(c);
+        // Common coding symbols
+        for (char32_t c : {char32_t(0x2026), char32_t(0x2192), char32_t(0x2713), char32_t(0x2717)}) chars.push_back(c);
+
+        int numChars = static_cast<int>(chars.size());
         
         // Calculate grid size for atlas
-        int gridSize = static_cast<int>(std::ceil(std::sqrt(numChars)));  // 10x10 grid
+        int gridSize = static_cast<int>(std::ceil(std::sqrt(numChars)));
         
         // Get font metrics
-        float ascender = ftFace->size->metrics.ascender / 64.0f;
-        float descender = ftFace->size->metrics.descender / 64.0f;  // Negative
         float height = ftFace->size->metrics.height / 64.0f;
-        
         lineHeightValue = height / scale;
         
-        // Find maximum glyph dimensions
+        // Find maximum glyph dimensions across all selected characters
         int maxWidth = 0;
         int maxHeight = 0;
-        
-        for (int c = firstChar; c <= lastChar; ++c) {
-            if (FT_Load_Char(ftFace, c, FT_LOAD_RENDER)) {
-                continue;
-            }
+        for (char32_t c : chars) {
+            if (FT_Load_Char(ftFace, c, FT_LOAD_RENDER)) continue;
             maxWidth = std::max(maxWidth, static_cast<int>(ftFace->glyph->bitmap.width));
             maxHeight = std::max(maxHeight, static_cast<int>(ftFace->glyph->bitmap.rows));
         }
@@ -198,96 +202,66 @@ struct FontAtlas::Impl {
         int cellWidth = maxWidth + padding * 2;
         int cellHeight = maxHeight + padding * 2;
         
-        // Calculate atlas dimensions
         textureWidth = gridSize * cellWidth;
         textureHeight = gridSize * cellHeight;
         
-        // Ensure power-of-two or reasonable size
         textureWidth = std::max(textureWidth, 256);
         textureHeight = std::max(textureHeight, 256);
         
-        // Create texture data (R8 format - single channel grayscale)
         std::vector<unsigned char> atlasData(textureWidth * textureHeight, 0);
         
-        // Clear ASCII tables
-        asciiValid.fill(false);
+        fastValid.fill(false);
+        otherGlyphs.clear();
         
-        // Render each character
         int charIndex = 0;
-        for (int c = firstChar; c <= lastChar; ++c) {
+        for (char32_t c : chars) {
             if (FT_Load_Char(ftFace, c, FT_LOAD_RENDER)) {
-                qWarning() << "FontAtlas: Failed to load character" << c;
                 charIndex++;
                 continue;
             }
             
             FT_GlyphSlot g = ftFace->glyph;
-            
             int row = charIndex / gridSize;
             int col = charIndex % gridSize;
-            
-            // Calculate position in atlas
             int atlasX = col * cellWidth + padding;
             int atlasY = row * cellHeight + padding;
             
-            // Copy glyph bitmap to atlas
             for (unsigned int y = 0; y < g->bitmap.rows; ++y) {
                 for (unsigned int x = 0; x < g->bitmap.width; ++x) {
                     int destX = atlasX + x;
                     int destY = atlasY + y;
-                    
                     if (destX < textureWidth && destY < textureHeight) {
-                        // FreeType bitmaps are top-to-bottom, OpenGL textures are bottom-to-top
-                        // But we'll handle this in UV coordinates
                         atlasData[destY * textureWidth + destX] = 
                             g->bitmap.buffer[y * g->bitmap.pitch + x];
                     }
                 }
             }
             
-            // Calculate UV coordinates (normalized 0-1)
-            float cellLeft = static_cast<float>(col * cellWidth);
-            float cellTop = static_cast<float>(row * cellHeight);
-            float cellRight = cellLeft + static_cast<float>(cellWidth);
-            float cellBottom = cellTop + static_cast<float>(cellHeight);
+            float uMin = static_cast<float>(col * cellWidth) / textureWidth;
+            float vMin = static_cast<float>(row * cellHeight) / textureHeight;
+            float uMax = static_cast<float>((col + 1) * cellWidth) / textureWidth;
+            float vMax = static_cast<float>((row + 1) * cellHeight) / textureHeight;
             
-            float uMin = cellLeft / textureWidth;
-            float vMin = cellTop / textureHeight;
-            float uMax = cellRight / textureWidth;
-            float vMax = cellBottom / textureHeight;
-            
-            // Create glyph descriptor
             GlyphDescriptor desc;
             desc.glyphIndex = FT_Get_Char_Index(ftFace, c);
             desc.uvMin = {uMin, vMin};
             desc.uvMax = {uMax, vMax};
-            desc.size = {
-                static_cast<float>(cellWidth) / scale,
-                static_cast<float>(cellHeight) / scale
-            };
-            // Add padding to bearing so that the glyph quad is shifted up
-            // to compensate for the transparent padding rows at the top of the cell.
-            desc.bearing = {
-                static_cast<float>(g->bitmap_left) / scale,
-                static_cast<float>(g->bitmap_top + padding) / scale
-            };
+            desc.size = { static_cast<float>(cellWidth) / scale, static_cast<float>(cellHeight) / scale };
+            desc.bearing = { static_cast<float>(g->bitmap_left) / scale, static_cast<float>(g->bitmap_top + padding) / scale };
             desc.advance = static_cast<float>(g->advance.x >> 6) / scale;
             
-            // Store in ASCII lookup table
-            if (c >= 0 && c < 128) {
-                asciiGlyphs[c] = desc;
-                asciiValid[c] = true;
+            if (c < 256) {
+                fastGlyphs[c] = desc;
+                fastValid[c] = true;
+            } else {
+                otherGlyphs[c] = desc;
             }
             
             charIndex++;
         }
         
-        // Get monospace advance from 'M' character
-        if (asciiValid['M']) {
-            monoAdvanceValue = asciiGlyphs['M'].advance;
-        } else if (asciiValid['0']) {
-            monoAdvanceValue = asciiGlyphs['0'].advance;
-        }
+        if (fastValid['M']) monoAdvanceValue = fastGlyphs['M'].advance;
+        else if (fastValid['0']) monoAdvanceValue = fastGlyphs['0'].advance;
         
         // Create OpenGL texture
         gl->glGenTextures(1, &textureId);
@@ -362,29 +336,23 @@ int FontAtlas::textureHeight() const {
     return m_impl->textureHeight;
 }
 
-std::optional<GlyphDescriptor> FontAtlas::getGlyph(char c) const {
-    unsigned char uc = static_cast<unsigned char>(c);
-    if (uc < 32 || uc > 126) {
-        return std::nullopt;
+std::optional<GlyphDescriptor> FontAtlas::getGlyph(char32_t c) const {
+    if (c < 256) {
+        if (m_impl->fastValid[c]) return m_impl->fastGlyphs[c];
+    } else {
+        auto it = m_impl->otherGlyphs.find(c);
+        if (it != m_impl->otherGlyphs.end()) return it->second;
     }
-    
-    if (m_impl->asciiValid[uc]) {
-        return m_impl->asciiGlyphs[uc];
-    }
-    
     return std::nullopt;
 }
 
-const GlyphDescriptor* FontAtlas::getASCIIGlyph(char c) const {
-    unsigned char uc = static_cast<unsigned char>(c);
-    if (uc < 32 || uc > 126) {
-        return nullptr;
+const GlyphDescriptor* FontAtlas::getASCIIGlyph(char32_t c) const {
+    if (c < 256) {
+        if (m_impl->fastValid[c]) return &m_impl->fastGlyphs[c];
+    } else {
+        auto it = m_impl->otherGlyphs.find(c);
+        if (it != m_impl->otherGlyphs.end()) return &it->second;
     }
-    
-    if (m_impl->asciiValid[uc]) {
-        return &m_impl->asciiGlyphs[uc];
-    }
-    
     return nullptr;
 }
 

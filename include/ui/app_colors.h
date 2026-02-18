@@ -19,6 +19,15 @@ struct ThemeColors {
     QColor accentLight;
     QColor separator;
     bool isDark;
+
+    // Diff specific colors
+    QColor diffAddedBg;
+    QColor diffRemovedBg;
+    QColor diffHeaderBg;
+    QColor diffGutterBg;
+    QColor diffGutterText;
+    QColor diffInlineAddedBg;
+    QColor diffInlineRemovedBg;
 };
 
 /**
@@ -38,38 +47,66 @@ public:
                 return { QColor("#FFFFFF"), QColor("#F5F5F7"), QColor("#E8E8ED"),
                          QColor("#1D1D1F"), QColor("#6E6E73"),
                          QColor("#7B61FF"), QColor("#A78BFF"),
-                         QColor("#D1D1D6"), false };
+                         QColor("#D1D1D6"), false,
+                         QColor(19, 153, 22, 30), QColor(255, 16, 8, 25), // added, removed bg
+                         QColor("#F5F5F7"), QColor("#E8E8ED"), QColor("#6E6E73"), // header, gutter bg, gutter text
+                         QColor(19, 153, 22, 60), QColor(255, 16, 8, 55) // inline added, removed bg
+                       };
             case Theme::SolarizedDark:
                 return { QColor("#002B36"), QColor("#073642"), QColor("#001E27"),
                          QColor("#839496"), QColor("#586E75"),
                          QColor("#268BD2"), QColor("#2AA198"),
-                         QColor("#073642"), true };
+                         QColor("#073642"), true,
+                         QColor(133, 153, 0, 40), QColor(220, 50, 47, 40),
+                         QColor("#073642"), QColor("#001E27"), QColor("#586E75"),
+                         QColor(133, 153, 0, 80), QColor(220, 50, 47, 80)
+                       };
             case Theme::Dracula:
                 return { QColor("#282A36"), QColor("#343746"), QColor("#21222C"),
                          QColor("#F8F8F2"), QColor("#6272A4"),
                          QColor("#BD93F9"), QColor("#FF79C6"),
-                         QColor("#44475A"), true };
+                         QColor("#44475A"), true,
+                         QColor(80, 250, 123, 40), QColor(255, 85, 85, 40),
+                         QColor("#343746"), QColor("#21222C"), QColor("#6272A4"),
+                         QColor(80, 250, 123, 80), QColor(255, 85, 85, 80)
+                       };
             case Theme::Nord:
                 return { QColor("#2E3440"), QColor("#3B4252"), QColor("#242933"),
                          QColor("#ECEFF4"), QColor("#D8DEE9"),
                          QColor("#88C0D0"), QColor("#81A1C1"),
-                         QColor("#4C566A"), true };
+                         QColor("#4C566A"), true,
+                         QColor(163, 190, 140, 40), QColor(191, 97, 106, 40),
+                         QColor("#3B4252"), QColor("#242933"), QColor("#D8DEE9"),
+                         QColor(163, 190, 140, 80), QColor(191, 97, 106, 80)
+                       };
             case Theme::Monokai:
                 return { QColor("#272822"), QColor("#3E3D32"), QColor("#1E1F1A"),
                          QColor("#F8F8F2"), QColor("#75715E"),
                          QColor("#A6E22E"), QColor("#FD971F"),
-                         QColor("#49483E"), true };
+                         QColor("#49483E"), true,
+                         QColor(166, 226, 46, 40), QColor(249, 38, 114, 40),
+                         QColor("#3E3D32"), QColor("#1E1F1A"), QColor("#75715E"),
+                         QColor(166, 226, 46, 80), QColor(249, 38, 114, 80)
+                       };
             case Theme::OneDark:
                 return { QColor("#282C34"), QColor("#2C313A"), QColor("#21252B"),
                          QColor("#ABB2BF"), QColor("#5C6370"),
                          QColor("#61AFEF"), QColor("#C678DD"),
-                         QColor("#3E4451"), true };
+                         QColor("#3E4451"), true,
+                         QColor(152, 195, 121, 40), QColor(224, 108, 117, 40),
+                         QColor("#2C313A"), QColor("#21252B"), QColor("#5C6370"),
+                         QColor(152, 195, 121, 80), QColor(224, 108, 117, 80)
+                       };
             case Theme::Dark:
             default:
                 return { QColor("#202124"), QColor("#2C2D30"), QColor("#16161A"),
                          QColor("#F0F0F0"), QColor("#7A7384"),
                          QColor("#B2A3FF"), QColor("#CEC4FF"),
-                         QColor("#333333"), true };
+                         QColor("#333333"), true,
+                         QColor(108, 191, 67, 38), QColor(255, 115, 131, 38),
+                         QColor("#2C2D30"), QColor("#16161A"), QColor("#7A7384"),
+                         QColor(108, 191, 67, 89), QColor(255, 115, 131, 89)
+                       };
         }
     }
 

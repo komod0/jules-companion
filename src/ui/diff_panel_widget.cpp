@@ -93,6 +93,19 @@ DiffPanelWidget::DiffPanelWidget(QWidget* parent)
         update();
     });
 
+    // Poll for async syntax highlighting completion
+    m_syntaxPollTimer = new QTimer(this);
+    m_syntaxPollTimer->setInterval(100);
+    connect(m_syntaxPollTimer, &QTimer::timeout, this, [this]() {
+        if (m_diffRenderer && !m_diffRenderer->isSyntaxHighlightingInProgress() && m_syntaxHighlightingWasActive) {
+            m_syntaxHighlightingWasActive = false;
+            update();
+        } else if (m_diffRenderer && m_diffRenderer->isSyntaxHighlightingInProgress()) {
+            m_syntaxHighlightingWasActive = true;
+        }
+    });
+    m_syntaxPollTimer->start();
+
     qDebug() << "[DiffPanelWidget] Constructor called";
 }
 
@@ -137,12 +150,12 @@ void DiffPanelWidget::releaseResources() {
     qDebug() << "[DiffPanelWidget] Resources released for memory savings";
 }
 
-void DiffPanelWidget::updateDarkMode(bool isDark) {
-    if (isDark == m_isDark) return;
-    m_isDark = isDark;
+void DiffPanelWidget::updateTheme(Theme theme) {
+    m_theme = theme;
+    m_isDark = AppColors::colorsForTheme(theme).isDark;
     if (m_diffRenderer) {
         makeCurrent();
-        m_diffRenderer->setDarkMode(isDark);
+        m_diffRenderer->setTheme(theme);
         doneCurrent();
     }
     update();

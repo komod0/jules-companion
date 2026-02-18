@@ -187,18 +187,22 @@ void AppController::connectSignals()
 
     // Theme -> system tray + diff panel adaptation
     connect(m_window.get(), &MainWindow::themeChanged,
-            [this](Theme) {
+            [this](Theme theme) {
         Theme eff = m_window->effectiveTheme();
         bool isDark = AppColors::colorsForTheme(eff).isDark;
         m_systemTray->updateTheme(isDark);
         if (m_sessionDetailWidget->diffPanel()) {
-            m_sessionDetailWidget->diffPanel()->updateDarkMode(isDark);
+            m_sessionDetailWidget->diffPanel()->updateTheme(eff);
         }
     });
     // Set initial tray/diff theme
     {
-        bool isDark = AppColors::colorsForTheme(m_window->effectiveTheme()).isDark;
+        Theme eff = m_window->effectiveTheme();
+        bool isDark = AppColors::colorsForTheme(eff).isDark;
         m_systemTray->updateTheme(isDark);
+        if (m_sessionDetailWidget->diffPanel()) {
+            m_sessionDetailWidget->diffPanel()->updateTheme(eff);
+        }
     }
 
     connect(&settings, &SettingsManager::apiKeyChanged, [this]() {
@@ -317,6 +321,30 @@ void AppController::connectSignals()
             [](const QString& sessionId) {
         QString url = QString("https://jules.google.com/session/%1").arg(sessionId);
         QDesktopServices::openUrl(QUrl(url));
+    });
+
+    // Session list context menu -> delete
+    connect(m_sessionListWidget, &SessionListWidget::deleteSessionRequested,
+            [this](const QString& sessionId) {
+        auto session = m_repository->getSession(sessionId);
+        QString title = session ? (session->title.value_or(session->prompt.left(30))) : sessionId;
+
+        auto reply = QMessageBox::question(m_window.get(), "Delete Session",
+            QString("Are you sure you want to delete the session \"%1\"?").arg(title),
+            QMessageBox::Yes | QMessageBox::No);
+
+        if (reply == QMessageBox::Yes) {
+            if (m_repository->deleteSession(sessionId)) {
+                m_window->showFlashMessage("Session deleted", FlashMessageType::Success);
+                // If the deleted session was being displayed, clear the detail view
+                if (!m_sessionDetailWidget->isEmpty() &&
+                    m_sessionDetailWidget->displayedText().contains(sessionId)) {
+                    m_sessionDetailWidget->clear();
+                }
+            } else {
+                m_window->showFlashMessage("Failed to delete session", FlashMessageType::Error);
+            }
+        }
     });
 
     // Session detail -> open URLs
